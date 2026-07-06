@@ -25,25 +25,23 @@ async function sendTelegramLog(message) {
     }
     try {
         const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-        const response = await axios.post(url, {
+        await axios.post(url, {
             chat_id: TELEGRAM_CHAT_ID,
             text: message,
             parse_mode: 'HTML'
         });
-        console.log('Telegram log sent:', response.status);
+        console.log('Telegram log sent');
     } catch (err) {
         console.error('Telegram log error:', err.response ? err.response.data : err.message);
     }
 }
 
 // ==========================================
-// 1. PINDAHKAN LOGGER KE PALING ATAS
+// 1. LOGGER DI PALING ATAS
 // ==========================================
 app.use((req, res, next) => {
     const start = Date.now();
     const originalSend = res.send;
-
-    // Simpan originalUrl tepat saat request masuk pertama kali
     const requestUrl = req.originalUrl; 
 
     res.send = function(data) {
@@ -61,7 +59,6 @@ app.use((req, res, next) => {
         `;
 
         sendTelegramLog(logMsg.trim());
-
         return originalSend.call(this, data);
     };
 
@@ -69,7 +66,7 @@ app.use((req, res, next) => {
 });
 
 // ==========================================
-// 2. MIDDLEWARE EDIT JSON RESPONSE (CREATOR)
+// 2. MIDDLEWARE INJECT CREATOR RESPONSE
 // ==========================================
 const CREATOR = process.env.API_CREATOR || "Created By Rin api";
 app.use((req, res, next) => {
@@ -90,6 +87,41 @@ app.use((req, res, next) => {
 
 const routeMetadata = [];
 const apiFolder = path.join(__dirname, './src/api');
+
+// ==========================================
+// 3. MIDDLEWARE CEK API KEY (DIURUTKAN SEBELUM ROUTE REGISTER)
+// ==========================================
+app.use((req, res, next) => {
+    // Lewati proteksi jika mengakses static file atau documentation utama
+    if (req.path.startsWith('/src/') || req.path === '/openapi.json' || req.path === '/' || req.path.startsWith('/api-page')) {
+        return next();
+    }
+
+    // Mencocokkan rute yang diminta dengan metadata yang terdaftar
+    const matchedRoute = routeMetadata.find(route => {
+        // Jika method di metadata adalah 'ALL', maka bypass pengecekan method asal cocok path-nya
+        const methodMatch = route.method === 'ALL' || route.method.toLowerCase() === req.method.toLowerCase();
+        if (!methodMatch) return false;
+
+        const routePath = route.path.split('?')[0];
+        const regexStr = routePath.replace(/:\w+/g, '([^/]+)');
+        const regex = new RegExp('^' + regexStr + '$');
+        return regex.test(req.path);
+    });
+
+    if (matchedRoute && matchedRoute.isApikey) {
+        // Mendukung pengecekan lewat header 'x-api-key' atau lewat query URL '?apikey=...'
+        const apiKey = req.headers['x-api-key'] || req.query.apikey;
+        
+        if (!apiKey || apiKey !== 'Rinn') {
+            return res.status(401).json({
+                status: false,
+                message: 'Unauthorized: Invalid or missing API Key. Silahkan gunakan parameter ?apikey=Rinn'
+            });
+        }
+    }
+    next();
+});
 
 function registerRoute(routeDef, category) {
     const { method, path: routePath, handler, metadata = {} } = routeDef;
@@ -113,75 +145,50 @@ function registerRoute(routeDef, category) {
         category: metadata.category || category || 'Umum',
         description: metadata.description || '',
         parameters: metadata.parameters || [],
-        isApikey: metadata.isApikey || false
+        isApikey: routeDef.isApikey || metadata.isApikey || false // Tarik preferensi isApikey tingkat atas maupun dari metadata
     });
 }
 
-// Load otomatis file API
-fs.readdirSync(apiFolder).forEach((subfolder) => {
-    const subfolderPath = path.join(apiFolder, subfolder);
-    if (!fs.statSync(subfolderPath).isDirectory()) return;
+// Load otomatis file API (Sekarang aman karena rute didaftarkan SETELAH aturan API Key dibuat)
+if (fs.existsSync(apiFolder)) {
+    fs.readdirSync(apiFolder).forEach((subfolder) => {
+        const subfolderPath = path.join(apiFolder, subfolder);
+        if (!fs.statSync(subfolderPath).isDirectory()) return;
 
-    fs.readdirSync(subfolderPath).forEach((file) => {
-        if (path.extname(file) !== '.js') return;
+        fs.readdirSync(subfolderPath).forEach((file) => {
+            if (path.extname(file) !== '.js') return;
 
-        const filePath = path.join(subfolderPath, file);
-        try {
-            const exported = require(filePath);
+            const filePath = path.join(subfolderPath, file);
+            try {
+                const exported = require(filePath);
 
-            if (Array.isArray(exported)) {
-                exported.forEach((routeDef) => {
-                    if (!routeDef.metadata) routeDef.metadata = {};
-                    if (!routeDef.metadata.category) routeDef.metadata.category = subfolder;
-                    registerRoute(routeDef, subfolder);
-                });
-            } else if (typeof exported === 'object' && exported.handler) {
-                if (!exported.metadata) exported.metadata = {};
-                if (!exported.metadata.category) exported.metadata.category = subfolder;
-                registerRoute(exported, subfolder);
-            } else if (typeof exported === 'function') {
-                exported(app);
-                console.log(chalk.yellow(`⚠️  Legacy style detected: ${file} (metadata tidak tersimpan)`));
-            } else {
-                console.warn(chalk.yellow(`⚠️  Format tidak dikenali di ${file}, skip.`));
+                if (Array.isArray(exported)) {
+                    exported.forEach((routeDef) => {
+                        if (!routeDef.metadata) routeDef.metadata = {};
+                        if (!routeDef.metadata.category) routeDef.metadata.category = subfolder;
+                        registerRoute(routeDef, subfolder);
+                    });
+                } else if (typeof exported === 'object' && exported.handler) {
+                    if (!exported.metadata) exported.metadata = {};
+                    if (!exported.metadata.category) exported.metadata.category = subfolder;
+                    registerRoute(exported, subfolder);
+                } else if (typeof exported === 'function') {
+                    exported(app);
+                    console.log(chalk.yellow(`⚠️  Legacy style detected: ${file} (metadata tidak tersimpan)`));
+                } else {
+                    console.warn(chalk.yellow(`⚠️  Format tidak dikenali di ${file}, skip.`));
+                }
+            } catch (err) {
+                console.error(chalk.red(`❌ Gagal load ${file}: ${err.message}`));
             }
-        } catch (err) {
-            console.error(chalk.red(`❌ Gagal load ${file}: ${err.message}`));
-        }
+        });
     });
-});
+}
 
 console.log(chalk.bgHex('#90EE90').hex('#333').bold(' Load Complete! ✓ '));
 console.log(chalk.bgHex('#90EE90').hex('#333').bold(` Total Routes Loaded: ${routeMetadata.length} `));
 
-// ==========================================
-// 3. MIDDLEWARE CEK API KEY (SETELAH ROUTES DI-LOAD)
-// ==========================================
-app.use((req, res, next) => {
-    if (req.path.startsWith('/src/') || req.path === '/openapi.json' || req.path === '/') {
-        return next();
-    }
-
-    const matchedRoute = routeMetadata.find(route => {
-        if (route.method.toLowerCase() !== req.method.toLowerCase()) return false;
-        const routePath = route.path.split('?')[0];
-        const regexStr = routePath.replace(/:\w+/g, '([^/]+)');
-        const regex = new RegExp('^' + regexStr + '$');
-        return regex.test(req.path);
-    });
-
-    if (matchedRoute && matchedRoute.isApikey) {
-        const apiKey = req.headers['x-api-key'];
-        if (!apiKey || apiKey !== 'Rinn') {
-            return res.status(401).json({
-                status: false,
-                message: 'Unauthorized: Invalid or missing API Key'
-            });
-        }
-    }
-    next();
-});
-
+// Static files routing & default pages
 app.use('/', express.static(path.join(__dirname, 'api-page')));
 app.use('/src', express.static(path.join(__dirname, 'src')));
 
