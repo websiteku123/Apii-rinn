@@ -53,6 +53,7 @@ module.exports = {
             if (!hd2Buf) {
                 return res.status(400).json({
                     status: false,
+                    creator: "Rin imup",
                     message: 'Gagal mengambil gambar. Sediakan parameter ?url=... atau kirim gambar via media chat.'
                 });
             }
@@ -183,6 +184,7 @@ module.exports = {
             // Format keluaran response JSON yang sukses
             res.json({
                 status: true,
+                creator: "Rin imup",
                 data: {
                     url: hd2ResultUrl,
                     type: hd2Mime,
@@ -193,6 +195,7 @@ module.exports = {
         } catch (err) {
             res.status(500).json({
                 status: false,
+                creator: "Rin imup",
                 message: err.message || 'Terjadi kesalahan internal pada server'
             });
         }
