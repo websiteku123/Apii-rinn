@@ -554,7 +554,20 @@ p, .text-muted, .section-description, .hero-description {
         gap: 14px !important;
     }
 }
-
+@media (max-width: 576px) {
+    .hero-section {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 10px !important;
+    }
+    .api-actions {
+        width: 100% !important;
+        justify-content: space-between !important;
+    }
+    .get-api-btn {
+        width: auto !important; /* Button tetap berbentuk persegi panjang mini */
+    }
+}
 /* Spinners animations */
 @keyframes rotate-spinner { 100% { transform: rotate(360deg); } }
 .spinner-logo { animation: rotate-spinner 1.5s linear infinite; }
