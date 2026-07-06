@@ -105,21 +105,22 @@ module.exports = {
         }
     },
     metadata: {
-        category: 'Tools',
-        description: 'Kirim massal request OTP (OTP Bomber) ke nomor HP tertentu',
-        parameters: [
-            {
-                name: 'phone',
-                in: 'query',
-                required: false,
-                description: 'Nomor HP target (contoh: 0812345678910)'
-            },
-            {
-                name: 'apikey',
-                in: 'query',
-                required: true,
-                description: 'API Key valid Anda untuk mengakses endpoint ini'
-            }
-        ],
-    }
+    category: "Tools",
+    description: "Deskripsi endpoint",
+    isApikey: true,
+    parameters: [
+      {
+        name: "phone",
+        in: "query",
+        required: true,
+        description: "Nomor HP"
+      },
+      {
+        name: "apikey",
+        in: "query",
+        required: true,
+        description: "API Key"
+      }
+    ]
+  }
 };
