@@ -1,4 +1,4 @@
-const express = require('express');
+        const express = require('express');
 const chalk = require('chalk');
 const fs = require('fs');
 const cors = require('cors');
@@ -89,17 +89,14 @@ const routeMetadata = [];
 const apiFolder = path.join(__dirname, './src/api');
 
 // ==========================================
-// 3. MIDDLEWARE CEK API KEY (DIURUTKAN SEBELUM ROUTE REGISTER)
+// 3. MIDDLEWARE CEK API KEY (MENGGUNAKAN PROPERTI INTERNAL)
 // ==========================================
 app.use((req, res, next) => {
-    // Lewati proteksi jika mengakses static file atau documentation utama
     if (req.path.startsWith('/src/') || req.path === '/openapi.json' || req.path === '/' || req.path.startsWith('/api-page')) {
         return next();
     }
 
-    // Mencocokkan rute yang diminta dengan metadata yang terdaftar
     const matchedRoute = routeMetadata.find(route => {
-        // Jika method di metadata adalah 'ALL', maka bypass pengecekan method asal cocok path-nya
         const methodMatch = route.method === 'ALL' || route.method.toLowerCase() === req.method.toLowerCase();
         if (!methodMatch) return false;
 
@@ -109,14 +106,14 @@ app.use((req, res, next) => {
         return regex.test(req.path);
     });
 
-    if (matchedRoute && matchedRoute.isApikey) {
-        // Mendukung pengecekan lewat header 'x-api-key' atau lewat query URL '?apikey=...'
-        const apiKey = req.headers['x-api-key'] || req.query.apikey;
+    // Pengecekan membaca status pengaman internal yang kita buat di fungsi pendaftaran
+    if (matchedRoute && matchedRoute.checkSecretKey) {
+        const apiKey = req.headers['x-api-key'] || req.query.apikey || req.body?.apikey;
         
         if (!apiKey || apiKey !== 'Rinn') {
             return res.status(401).json({
                 status: false,
-                message: 'Unauthorized: Invalid or missing API Key. Silahkan gunakan parameter ?apikey=Rinn'
+                message: 'Unauthorized: Invalid or missing API Key. Silahkan isi kolom input apikey dengan benar.'
             });
         }
     }
@@ -139,17 +136,23 @@ function registerRoute(routeDef, category) {
         return;
     }
 
+    // Menentukan apakah rute ini membutuhkan pengaman kunci rahasia
+    const needsKey = routeDef.isApikey || metadata.isApikey || false;
+
     routeMetadata.push({
         method: method.toUpperCase(),
         path: routePath,
         category: metadata.category || category || 'Umum',
         description: metadata.description || '',
         parameters: metadata.parameters || [],
-        isApikey: routeDef.isApikey || metadata.isApikey || false // Tarik preferensi isApikey tingkat atas maupun dari metadata
+        // Diubah ke false agar komponen input bawaan di atas menghilang secara visual dari halaman UI
+        isApikey: false, 
+        // Penanda rahasia agar backend Express kamu tetap mengunci rute ini di latar belakang
+        checkSecretKey: needsKey 
     });
 }
 
-// Load otomatis file API (Sekarang aman karena rute didaftarkan SETELAH aturan API Key dibuat)
+// Load otomatis file API
 if (fs.existsSync(apiFolder)) {
     fs.readdirSync(apiFolder).forEach((subfolder) => {
         const subfolderPath = path.join(apiFolder, subfolder);
