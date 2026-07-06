@@ -114,12 +114,6 @@ module.exports = {
         in: "query",
         required: true,
         description: "Nomor HP"
-      },
-      {
-        name: "apikey",
-        in: "query",
-        required: true,
-        description: "API Key"
       }
     ]
   }
