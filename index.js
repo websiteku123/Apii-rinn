@@ -35,6 +35,59 @@ async function sendTelegramLog(message) {
         console.error('Telegram log error:', err.response ? err.response.data : err.message);
     }
 }
+
+// ==========================================
+// 1. PINDAHKAN LOGGER KE PALING ATAS
+// ==========================================
+app.use((req, res, next) => {
+    const start = Date.now();
+    const originalSend = res.send;
+
+    // Simpan originalUrl tepat saat request masuk pertama kali
+    const requestUrl = req.originalUrl; 
+
+    res.send = function(data) {
+        const duration = Date.now() - start;
+        const status = res.statusCode;
+
+        const logMsg = `
+<b>📥 Request</b>
+<b>Method:</b> ${req.method}
+<b>URL:</b> ${requestUrl}
+<b>IP:</b> ${req.ip || req.connection.remoteAddress || '-'}
+<b>User-Agent:</b> ${req.get('user-agent') || '-'}
+<b>Status:</b> ${status}
+<b>Duration:</b> ${duration}ms
+        `;
+
+        sendTelegramLog(logMsg.trim());
+
+        return originalSend.call(this, data);
+    };
+
+    next();
+});
+
+// ==========================================
+// 2. MIDDLEWARE EDIT JSON RESPONSE (CREATOR)
+// ==========================================
+const CREATOR = process.env.API_CREATOR || "Created By Rin api";
+app.use((req, res, next) => {
+    const originalJson = res.json;
+    res.json = function (data) {
+        if (data && typeof data === 'object') {
+            const responseData = {
+                status: data.status,
+                creator: CREATOR,
+                ...data
+            };
+            return originalJson.call(this, responseData);
+        }
+        return originalJson.call(this, data);
+    };
+    next();
+});
+
 const routeMetadata = [];
 const apiFolder = path.join(__dirname, './src/api');
 
@@ -64,6 +117,7 @@ function registerRoute(routeDef, category) {
     });
 }
 
+// Load otomatis file API
 fs.readdirSync(apiFolder).forEach((subfolder) => {
     const subfolderPath = path.join(apiFolder, subfolder);
     if (!fs.statSync(subfolderPath).isDirectory()) return;
@@ -99,35 +153,10 @@ fs.readdirSync(apiFolder).forEach((subfolder) => {
 
 console.log(chalk.bgHex('#90EE90').hex('#333').bold(' Load Complete! ✓ '));
 console.log(chalk.bgHex('#90EE90').hex('#333').bold(` Total Routes Loaded: ${routeMetadata.length} `));
-app.use((req, res, next) => {
-    const start = Date.now();
-    const originalSend = res.send;
 
-    res.send = function(data) {
-        const duration = Date.now() - start;
-        const status = res.statusCode;
-
-        const logMsg = `
-<b>📥 Request</b>
-<b>Method:</b> ${req.method}
-<b>URL:</b> ${req.originalUrl}
-<b>IP:</b> ${req.ip || req.connection.remoteAddress || '-'}
-<b>User-Agent:</b> ${req.get('user-agent') || '-'}
-<b>Status:</b> ${status}
-<b>Duration:</b> ${duration}ms
-        `;
-
-        sendTelegramLog(logMsg.trim());
-
-        return originalSend.call(this, data);
-    };
-
-    next();
-});
-
-app.use('/', express.static(path.join(__dirname, 'api-page')));
-app.use('/src', express.static(path.join(__dirname, 'src')));
-
+// ==========================================
+// 3. MIDDLEWARE CEK API KEY (SETELAH ROUTES DI-LOAD)
+// ==========================================
 app.use((req, res, next) => {
     if (req.path.startsWith('/src/') || req.path === '/openapi.json' || req.path === '/') {
         return next();
@@ -153,22 +182,9 @@ app.use((req, res, next) => {
     next();
 });
 
-const CREATOR = process.env.API_CREATOR || "Created By Rin api";
-app.use((req, res, next) => {
-    const originalJson = res.json;
-    res.json = function (data) {
-        if (data && typeof data === 'object') {
-            const responseData = {
-                status: data.status,
-                creator: CREATOR,
-                ...data
-            };
-            return originalJson.call(this, responseData);
-        }
-        return originalJson.call(this, data);
-    };
-    next();
-});
+app.use('/', express.static(path.join(__dirname, 'api-page')));
+app.use('/src', express.static(path.join(__dirname, 'src')));
+
 app.get('/openapi.json', (req, res) => {
     res.json({
         creator: CREATOR,
@@ -176,6 +192,7 @@ app.get('/openapi.json', (req, res) => {
         routes: routeMetadata
     });
 });
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'api-page', 'index.html'));
 });
