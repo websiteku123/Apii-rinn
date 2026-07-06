@@ -1,4 +1,4 @@
-const axios = require('axios');
+    const axios = require('axios');
 
 async function sendOtpBomb(phone) {
     if (phone.startsWith("0")) phone = "62" + phone.slice(1);
@@ -127,15 +127,19 @@ module.exports = {
     metadata: {
         category: "Tools",
         description: "Spam / Bomb OTP ke nomor target menggunakan multi-endpoint API secara serentak",
-        isApikey: true,
         parameters: [
             {
                 name: "phone",
                 in: "query",
                 required: true,
                 description: "Nomor HP Target"
+            },
+            {
+                name: "apikey",
+                in: "query",
+                required: true,
+                description: "Masukkan API Key VIP Anda"
             }
-            // Parameter apikey manual di sini sudah dihapus total agar tidak double
         ]
     }
-};
+};    
