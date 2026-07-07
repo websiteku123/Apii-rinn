@@ -100,19 +100,19 @@ module.exports = {
   },
   metadata: {
     category: 'Tools',
-    description: 'Mengedit gambar menggunakan instruksi teks (prompt) berbasis AI langsung menampilkan gambar JPEG.',
+    description: 'Mengedit gambar menggunakan prompt dan menghasilkan gambar yng sesuai',
     parameters: [
       {
         name: 'url',
         in: 'query',
         required: true,
-        description: 'URL tautan gambar publik yang ingin diedit'
+        description: 'Link url image yg ingin di edit'
       },
       {
         name: 'prompt',
         in: 'query',
         required: true,
-        description: 'Perintah modifikasi teks gambar.'
+        description: 'Perintah edit gambar.'
       }
     ],
   }
