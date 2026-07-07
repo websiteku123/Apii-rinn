@@ -1,4 +1,4 @@
-  const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
@@ -61,12 +61,13 @@ module.exports = {
 
         try {
             const inputName = req.query?.name || req.query?.q;
+            const templateParam = req.query?.template || req.query?.t;
 
             if (!inputName) {
                 return res.status(400).json({
                     status: false,
                     creator: "Rin imup",
-                    message: 'Parameter nama diperlukan! Contoh: ?name=Rin Store'
+                    message: 'Parameter nama diperlukan! Contoh: ?name=Rin Store&template=5'
                 });
             }
 
@@ -101,7 +102,27 @@ module.exports = {
                 });
             }
 
-            let randomNum = Math.floor(Math.random() * 17) + 1;
+            let randomNum;
+            let isRandom = false;
+
+            if (templateParam && templateParam.toLowerCase() === 'random') {
+                randomNum = Math.floor(Math.random() * 17) + 1;
+                isRandom = true;
+            } else if (templateParam) {
+                const parsedNum = parseInt(templateParam, 10);
+                if (isNaN(parsedNum) || parsedNum < 1 || parsedNum > 17) {
+                    return res.status(400).json({
+                        status: false,
+                        creator: "Rin imup",
+                        message: 'Template hanya menerima angka 1-17 atau kata "random".'
+                    });
+                }
+                randomNum = parsedNum;
+            } else {
+                randomNum = Math.floor(Math.random() * 17) + 1;
+                isRandom = true;
+            }
+
             let localTemplatePath = path.join(lobbyDir, `${randomNum}.jpg`);
 
             if (!fs.existsSync(localTemplatePath)) {
@@ -166,6 +187,7 @@ module.exports = {
 
             res.setHeader('Content-Type', 'image/jpeg');
             res.setHeader('X-Template-Used', String(randomNum));
+            res.setHeader('X-Random', String(isRandom));
             return res.send(buffer);
 
         } catch (err) {
@@ -186,7 +208,13 @@ module.exports = {
                 in: 'query',
                 required: true,
                 description: 'Nama atau nickname yang ingin ditempel pada lobby Free Fire'
+            },
+            {
+                name: 'template',
+                in: 'query',
+                required: false,
+                description: 'Nomor template 1-17 atau kata "random" untuk pilih acak. Default: random'
             }
         ],
     }
-};              
+};                              
