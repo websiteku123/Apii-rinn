@@ -18,25 +18,20 @@ function escapeDrawtext(value = "") {
         .trim();
 }
 
-// Fungsi pembantu memastikan folder temp siap digunakan
-function ensureDirectoryExistence(filePath) {
-    const dirname = path.dirname(filePath);
-    if (fs.existsSync(dirname)) {
-        return true;
-    }
-    ensureDirectoryExistence(dirname);
-    fs.mkdirSync(dirname);
-}
-
 module.exports = {
     method: 'get',
     path: '/maker/fakeff',
     handler: async (req, res) => {
-        // Buat nama file temp yang unik untuk menghindari tabrakan render jika banyak yang pakai barengan
+        // Buat folder 'tmp' secara otomatis di root folder project jika belum ada
+        const tmpDir = path.join(process.cwd(), 'tmp');
+        if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+        }
+
         const uniqueId = Date.now() + Math.floor(Math.random() * 1000);
-        const inputLocalPath = path.join(process.cwd(), 'tmp', `ff_in_${uniqueId}.jpg`);
-        const outputLocalPath = path.join(process.cwd(), 'tmp', `ff_out_${uniqueId}.jpg`);
-        const fontPath = path.join(process.cwd(), 'tmp', 'TeutonNormal.otf');
+        const inputLocalPath = path.join(tmpDir, `ff_in_${uniqueId}.jpg`);
+        const outputLocalPath = path.join(tmpDir, `ff_out_${uniqueId}.jpg`);
+        const fontPath = path.join(tmpDir, 'TeutonNormal.otf');
 
         try {
             const inputName = req.query?.name || req.query?.q;
@@ -58,39 +53,48 @@ module.exports = {
                 });
             }
 
-            // REQUEST ACK: Mengacak template otomatis dari angka 1 sampai 17
+            // Mengacak template otomatis dari angka 1 sampai 17
             const randomNum = Math.floor(Math.random() * 17) + 1;
             const templatePrefixUrl = `https://raw.githubusercontent.com/ryyntwx/pakeff2/refs/heads/main/${randomNum}.jpg`;
 
-            // Pastikan folder tmp ada
-            ensureDirectoryExistence(inputLocalPath);
-
             // 1. Download Gambar Template Random dari GitHub ke Lokal Temp Server
-            const imgResponse = await fetch(templatePrefixUrl);
-            if (!imgResponse.ok) throw new Error(`Gagal mengunduh template Free Fire nomor ${randomNum} dari GitHub.`);
-            const imgBuffer = Buffer.from(await imgResponse.arrayBuffer());
-            fs.writeFileSync(inputLocalPath, imgBuffer);
+            try {
+                const imgResponse = await fetch(templatePrefixUrl);
+                if (!imgResponse.ok) throw new Error(`Status HTTP ${imgResponse.status}`);
+                const imgBuffer = Buffer.from(await imgResponse.arrayBuffer());
+                fs.writeFileSync(inputLocalPath, imgBuffer);
+            } catch (downloadErr) {
+                return res.status(500).json({
+                    status: false,
+                    creator: "Rin imup",
+                    message: `Gagal mengunduh file template ke-${randomNum} dari GitHub. Pastikan URL repository benar.`,
+                    error: downloadErr.message
+                });
+            }
 
-            // 2. Proteksi Font: Jika font belum ada di tmp, unduh otomatis atau gunakan fallback terdekat
+            // 2. Proteksi Font: Jika font belum ada di tmp, unduh otomatis dari repository
             if (!fs.existsSync(fontPath)) {
                 try {
-                    // Mengunduh font TeutonNormal langsung dari repo kamu agar tidak miss
                     const fontResponse = await fetch('https://raw.githubusercontent.com/ryyntwx/pakeff2/refs/heads/main/TeutonNormal.otf');
                     if (fontResponse.ok) {
                         const fontBuffer = Buffer.from(await fontResponse.arrayBuffer());
                         fs.writeFileSync(fontPath, fontBuffer);
                     } else {
-                        // Jika tidak ada di repo, buat dummy / lempar error agar kamu tau fontnya kurang
-                        throw new Error("Font TeutonNormal.otf tidak ditemukan di server/repo.");
+                        // Jika tidak ada di repo, coba cari file cadangan TeutonNormal.otf di root directory project
+                        const backupFont = path.join(process.cwd(), 'TeutonNormal.otf');
+                        if (fs.existsSync(backupFont)) {
+                            fs.copyFileSync(backupFont, fontPath);
+                        } else {
+                            throw new Error("File TeutonNormal.otf tidak ditemukan di GitHub maupun di root directory server.");
+                        }
                     }
                 } catch (fontErr) {
-                    // Jika gagal download font, cek folder root apakah ada backup
-                    const backupFont = path.join(process.cwd(), 'TeutonNormal.otf');
-                    if (fs.existsSync(backupFont)) {
-                        fs.copyFileSync(backupFont, fontPath);
-                    } else {
-                        throw new Error("Font TeutonNormal.otf wajib ditaruh di root folder atau repo github agar text gradasi metalik bisa ter-render!");
-                    }
+                    return res.status(500).json({
+                        status: false,
+                        creator: "Rin imup",
+                        message: "Aplikasi gagal memuat Font TeutonNormal.otf.",
+                        error: fontErr.message
+                    });
                 }
             }
 
@@ -137,10 +141,15 @@ module.exports = {
                         const detail = String(stderr || err?.message || "unknown ffmpeg error").replace(/\s+/g, " ").trim();
                         console.error("[FFLOBBY API ERR]", detail);
                         
+                        // Cek spesifik jika penyebabnya adalah FFmpeg belum terinstal di system panel kamu
+                        const isNotInstalled = /ENOENT/i.test(detail) || /not found/i.test(detail);
+                        
                         return res.status(500).json({
                             status: false,
                             creator: "Rin imup",
-                            message: "Ffmpeg gagal merender gambar lobby.",
+                            message: isNotInstalled 
+                                ? "Server Error: Perintah 'ffmpeg' tidak ditemukan di sistem hosting/panel VPS kamu. Harap instal ffmpeg terlebih dahulu!" 
+                                : "FFmpeg gagal merender gambar lobby custom.",
                             error: detail
                         });
                     }
@@ -148,36 +157,35 @@ module.exports = {
                     // Baca hasil render jadi buffer gambar mentah
                     const finalBuffer = fs.readFileSync(outputLocalPath);
 
-                    // Atur header response agar browser & bot WhatsApp langsung membacanya sebagai file gambar asli
+                    // Atur header response agar langsung dibaca sebagai file gambar asli
                     res.setHeader('Content-Type', 'image/jpeg');
-                    res.setHeader('X-Template-Used', String(randomNum)); // Info tambahan template ke berapa yang kepake
+                    res.setHeader('X-Template-Used', String(randomNum));
 
                     return res.send(finalBuffer);
 
                 } catch (innerErr) {
                     return res.status(500).json({ status: false, creator: "Rin imup", message: innerErr.message });
                 } finally {
-                    // Bersihkan berkas sampah temporer dari penyimpanan server agar tidak penuh
+                    // Bersihkan berkas sampah temporer dari penyimpanan server
                     if (fs.existsSync(inputLocalPath)) fs.unlinkSync(inputLocalPath);
                     if (fs.existsSync(outputLocalPath)) fs.unlinkSync(outputLocalPath);
                 }
             });
 
         } catch (err) {
-            // Bersihkan file jika terjadi error sebelum ffmpeg jalan
             if (fs.existsSync(inputLocalPath)) fs.unlinkSync(inputLocalPath);
             if (fs.existsSync(outputLocalPath)) fs.unlinkSync(outputLocalPath);
 
             res.status(500).json({
                 status: false,
                 creator: "Rin imup",
-                message: err.message || 'Terjadi kesalahan internal saat membuat data Fake FF.'
+                message: err.message || 'Terjadi kesalahan internal saat memproses data Fake FF.'
             });
         }
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat gambar lobby custom Free Fire cocok buat bahan untuk jj.',
+        description: 'Membuat gambar lobby custom Free Fire dengan teks gradasi metalik tajam otomatis acak dari 17 template HD.',
         parameters: [
             {
                 name: 'name',
@@ -187,4 +195,4 @@ module.exports = {
             }
         ],
     }
-};
+};                
