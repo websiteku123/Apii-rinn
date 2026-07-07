@@ -231,7 +231,7 @@ module.exports = {
     }
   },
   metadata: {
-    category: 'Downloader',
+    category: 'Download',
     description: 'Play dan download audio dari YouTube menggunakan pencarian kata kunci',
     parameters: [
       {
