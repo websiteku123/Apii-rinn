@@ -91,6 +91,7 @@ app.use((req, res, next) => {
 <b>Content-Type:</b> ${res.get('Content-Type') || 'unknown'}
 <b>Duration:</b> ${duration}ms
             `;
+            // Jangan pakai await di sini agar tidak menghambat respon kirim file/buffer ke client
             sendTelegramLog(logMsg.trim());
         }
 
@@ -101,14 +102,14 @@ app.use((req, res, next) => {
 });
 
 // ==========================================
-// 2. MIDDLEWARE INJECT CREATOR (PERBAIKAN UTAMA)
+// 2. MIDDLEWARE INJECT CREATOR
 // ==========================================
 const CREATOR = process.env.API_CREATOR || "Welcome to  Api Rinn";
 app.use((req, res, next) => {
     const originalJson = res.json;
     const originalSend = res.send;
 
-    // Fix res.json agar tidak mengutak-atik buffer
+    // Fix res.json agar tidak mengutak-atik buffer gambar
     res.json = function (data) {
         if (Buffer.isBuffer(data)) {
             return originalSend.call(this, data);
@@ -124,11 +125,9 @@ app.use((req, res, next) => {
         return originalJson.call(this, data);
     };
 
-    // FIX COUPLING DI RES.SEND: Jika data yang dikirim adalah Buffer gambar, langsung lolos tanpa dibedah objek!
+    // FIX COUPLING DI RES.SEND: Jika data berupa image/buffer, langsung bypass keluar!
     res.send = function (data) {
         const contentType = res.get('Content-Type');
-        
-        // Jika content-type berupa image atau data adalah instance dari Buffer, langsung bypass keluar!
         if ((contentType && contentType.startsWith('image/')) || Buffer.isBuffer(data)) {
             return originalSend.call(this, data);
         }
@@ -282,18 +281,31 @@ app.use((req, res) => {
     res.status(404).sendFile(path.join(__dirname, 'api-page', '404.html'));
 });
 
+// ==========================================
+// 4. PENYATUAN MIDDLEWARE ERROR HANDLING (FIXED CRASH)
+// ==========================================
 app.use((err, req, res, next) => {
     console.error(err.stack);
-    res.status(500).sendFile(path.join(__dirname, 'api-page', '500.html'));
+    
+    // Deteksi jika user meminta format JSON atau halaman web biasa
+    if (req.accepts('html')) {
+        const file500 = path.join(__dirname, 'api-page', '500.html');
+        if (fs.existsSync(file500)) {
+            return res.status(500).sendFile(file500);
+        }
+    }
+    
+    return res.status(500).json({ 
+        status: false, 
+        message: err.message || "Internal Server Error" 
+    });
 });
 
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ status: false, message: "Internal Server Error" });
-});
+// Hanya listen port lokal jika dijalankan di luar platform Serverless (Development Mode)
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(chalk.bgHex('#90EE90').hex('#333').bold(` Server is running on port ${PORT} `));
+    });
+}
 
-app.listen(PORT, () => {
-    console.log(chalk.bgHex('#90EE90').hex('#333').bold(` Server is running on port ${PORT} `));
-});
-
-module.exports = app;                    
+module.exports = app;
