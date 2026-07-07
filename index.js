@@ -54,19 +54,26 @@ async function sendTelegramLog(message) {
 }
 
 // ==========================================
-// 1. LOGGER DI PALING ATAS
+// 1. LOGGER DI PALING ATAS (ANTI-SPAM FILTER FIXED)
 // ==========================================
 app.use((req, res, next) => {
     const start = Date.now();
     const originalSend = res.send;
     const requestUrl = req.originalUrl; 
+    const reqPath = req.path;
+
+    // FIX NYEPAM: Filter ketat agar file statis/dashboard tidak dikirim ke Telegram
+    const isStaticFile = /\.(json|css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|otf|map)$/i.test(reqPath);
+    const isDashboardPath = reqPath === '/' || reqPath.startsWith('/api-page') || reqPath.startsWith('/src/');
 
     res.send = function(data) {
         const duration = Date.now() - start;
         const status = res.statusCode;
         
-        const logMsg = `
-<b>📥 Request</b>
+        // Hanya kirim log jika BUKAN file statis dan BUKAN halaman dashboard utama
+        if (!isStaticFile && !isDashboardPath) {
+            const logMsg = `
+<b>📥 Request API</b>
 <b>Method:</b> ${req.method}
 <b>URL:</b> ${requestUrl}
 <b>IP:</b> ${req.ip || req.connection.remoteAddress || '-'}
@@ -74,9 +81,10 @@ app.use((req, res, next) => {
 <b>Status:</b> ${status}
 <b>Content-Type:</b> ${res.get('Content-Type') || 'unknown'}
 <b>Duration:</b> ${duration}ms
-        `;
+            `;
+            sendTelegramLog(logMsg.trim());
+        }
 
-        sendTelegramLog(logMsg.trim());
         return originalSend.call(this, data);
     };
 
@@ -90,7 +98,6 @@ const CREATOR = process.env.API_CREATOR || "Welcome to  Api Rinn";
 app.use((req, res, next) => {
     const originalJson = res.json;
     res.json = function (data) {
-        // FIX: Jika header response sudah berupa gambar, langsung lewatkan saja tanpa dibungkus JSON Creator!
         const contentType = res.get('Content-Type');
         if (contentType && contentType.startsWith('image/')) {
             return originalJson.call(this, data);
@@ -240,4 +247,3 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
-            
