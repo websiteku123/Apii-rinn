@@ -64,9 +64,6 @@ app.use((req, res, next) => {
     res.send = function(data) {
         const duration = Date.now() - start;
         const status = res.statusCode;
-
-        // Cegah spam log telegram mengirim isi binary gambar mentah yang panjang bgt
-        const isImage = res.get('Content-Type') && res.get('Content-Type').startsWith('image/');
         
         const logMsg = `
 <b>📥 Request</b>
@@ -93,7 +90,7 @@ const CREATOR = process.env.API_CREATOR || "Welcome to  Api Rinn";
 app.use((req, res, next) => {
     const originalJson = res.json;
     res.json = function (data) {
-        // FIX: Jika header response sudah diset sebagai gambar, jangan diubah ke JSON creator!
+        // FIX: Jika header response sudah berupa gambar, langsung lewatkan saja tanpa dibungkus JSON Creator!
         const contentType = res.get('Content-Type');
         if (contentType && contentType.startsWith('image/')) {
             return originalJson.call(this, data);
@@ -116,7 +113,7 @@ const routeMetadata = [];
 const apiFolder = path.join(__dirname, './src/api');
 
 // ==========================================
-// 3. MIDDLEWARE CEK API KEY (MENGGUNAKAN PROPERTI INTERNAL)
+// 3. MIDDLEWARE CEK API KEY
 // ==========================================
 app.use((req, res, next) => {
     if (req.path.startsWith('/src/') || req.path === '/openapi.json' || req.path === '/' || req.path.startsWith('/api-page')) {
@@ -133,12 +130,11 @@ app.use((req, res, next) => {
         return regex.test(req.path);
     });
 
-    // Pengecekan membaca status pengaman internal dari config.json
     if (matchedRoute && matchedRoute.checkSecretKey) {
         const apiKey = req.headers['x-api-key'] || req.query.apikey || req.body?.apikey;
         
         if (!apiKey || apiKey !== VALID_API_KEY) {
-            return res.status(404).json({
+            return res.status(401).json({
                 status: false,
                 message: 'Unauthorized: Invalid or missing API Key. Silahkan isi kolom input apikey dengan benar.'
             });
@@ -163,7 +159,6 @@ function registerRoute(routeDef, category) {
         return;
     }
 
-    // Menentukan apakah rute ini membutuhkan pengaman kunci rahasia
     const needsKey = routeDef.isApikey || metadata.isApikey || false;
 
     routeMetadata.push({
@@ -172,9 +167,7 @@ function registerRoute(routeDef, category) {
         category: metadata.category || category || 'Umum',
         description: metadata.description || '',
         parameters: metadata.parameters || [],
-        // Diubah ke false agar komponen input bawaan di atas menghilang secara visual dari halaman UI
         isApikey: false, 
-        // Penanda rahasia agar backend Express kamu tetap mengunci rute ini di latar belakang
         checkSecretKey: needsKey 
     });
 }
@@ -218,7 +211,6 @@ if (fs.existsSync(apiFolder)) {
 console.log(chalk.bgHex('#90EE90').hex('#333').bold(' Load Complete! ✓ '));
 console.log(chalk.bgHex('#90EE90').hex('#333').bold(` Total Routes Loaded: ${routeMetadata.length} `));
 
-// Static files routing & default pages
 app.use('/', express.static(path.join(__dirname, 'api-page')));
 app.use('/src', express.static(path.join(__dirname, 'src')));
 
@@ -248,5 +240,4 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
-                
-
+            
