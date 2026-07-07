@@ -54,7 +54,7 @@ async function sendTelegramLog(message) {
 }
 
 // ==========================================
-// 1. LOGGER DI PALING ATAS (ANTI-SPAM FILTER FIXED)
+// 1. LOGGER DI PALING ATAS (PERBAIKAN FILTER AKURAT)
 // ==========================================
 app.use((req, res, next) => {
     const start = Date.now();
@@ -62,16 +62,18 @@ app.use((req, res, next) => {
     const requestUrl = req.originalUrl; 
     const reqPath = req.path;
 
-    // FIX NYEPAM: Filter ketat agar file statis/dashboard tidak dikirim ke Telegram
+    // 1. Cek apakah ini file static (Aset gambar/css/js) -> Jika YA, kita skip log
     const isStaticFile = /\.(json|css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|otf|map)$/i.test(reqPath);
-    const isDashboardPath = reqPath === '/' || reqPath.startsWith('/api-page') || reqPath.startsWith('/src/');
+    
+    // 2. Cek apakah hanya membuka halaman utama "/" atau openapi -> Jika YA, kita skip log
+    const isMainPage = reqPath === '/' || reqPath === '/openapi.json';
 
     res.send = function(data) {
         const duration = Date.now() - start;
         const status = res.statusCode;
         
-        // Hanya kirim log jika BUKAN file statis dan BUKAN halaman dashboard utama
-        if (!isStaticFile && !isDashboardPath) {
+        // LOGIKA BARU: Kirim log HANYA jika BUKAN file static dan BUKAN halaman utama index web
+        if (!isStaticFile && !isMainPage) {
             const logMsg = `
 <b>📥 Request API</b>
 <b>Method:</b> ${req.method}
