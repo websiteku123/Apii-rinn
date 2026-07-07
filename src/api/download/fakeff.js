@@ -1,4 +1,4 @@
-const express = require('express');
+            const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
@@ -22,14 +22,15 @@ module.exports = {
     method: 'get',
     path: '/maker/fakeff',
     handler: async (req, res) => {
-        // Buat folder 'tmp' secara otomatis di root folder project jika belum ada
+        // Folder penyimpanan permanen template agar tidak perlu download terus-menerus (Anti-Timeout)
+        const lobbyDir = path.join(process.cwd(), 'lobby');
         const tmpDir = path.join(process.cwd(), 'tmp');
-        if (!fs.existsSync(tmpDir)) {
-            fs.mkdirSync(tmpDir, { recursive: true });
-        }
+
+        // Pastikan folder lobby dan tmp ada
+        if (!fs.existsSync(lobbyDir)) fs.mkdirSync(lobbyDir, { recursive: true });
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
         const uniqueId = Date.now() + Math.floor(Math.random() * 1000);
-        const inputLocalPath = path.join(tmpDir, `ff_in_${uniqueId}.jpg`);
         const outputLocalPath = path.join(tmpDir, `ff_out_${uniqueId}.jpg`);
         const fontPath = path.join(tmpDir, 'TeutonNormal.otf');
 
@@ -55,50 +56,64 @@ module.exports = {
 
             // Mengacak template otomatis dari angka 1 sampai 17
             const randomNum = Math.floor(Math.random() * 17) + 1;
-            const templatePrefixUrl = `https://raw.githubusercontent.com/ryyntwx/pakeff2/refs/heads/main/${randomNum}.jpg`;
+            const localTemplatePath = path.join(lobbyDir, `${randomNum}.jpg`);
 
-            // 1. Download Gambar Template Random dari GitHub ke Lokal Temp Server
-            try {
-                const imgResponse = await fetch(templatePrefixUrl);
-                if (!imgResponse.ok) throw new Error(`Status HTTP ${imgResponse.status}`);
-                const imgBuffer = Buffer.from(await imgResponse.arrayBuffer());
-                fs.writeFileSync(inputLocalPath, imgBuffer);
-            } catch (downloadErr) {
-                return res.status(500).json({
-                    status: false,
-                    creator: "Rin imup",
-                    message: `Gagal mengunduh file template ke-${randomNum} dari GitHub. Pastikan URL repository benar.`,
-                    error: downloadErr.message
-                });
-            }
-
-            // 2. Proteksi Font: Jika font belum ada di tmp, unduh otomatis dari repository
-            if (!fs.existsSync(fontPath)) {
+            // SOLUSI UTAMA: Cek apakah file template sudah ada di lokal folder 'lobby/'
+            if (!fs.existsSync(localTemplatePath)) {
+                console.log(`[DOWNLOADER] Template ${randomNum}.jpg belum ada di lokal. Mengunduh dari GitHub...`);
+                const templatePrefixUrl = `https://raw.githubusercontent.com/ryyntwx/pakeff2/refs/heads/main/${randomNum}.jpg`;
+                
                 try {
-                    const fontResponse = await fetch('https://raw.githubusercontent.com/ryyntwx/pakeff2/refs/heads/main/TeutonNormal.otf');
-                    if (fontResponse.ok) {
-                        const fontBuffer = Buffer.from(await fontResponse.arrayBuffer());
-                        fs.writeFileSync(fontPath, fontBuffer);
-                    } else {
-                        // Jika tidak ada di repo, coba cari file cadangan TeutonNormal.otf di root directory project
-                        const backupFont = path.join(process.cwd(), 'TeutonNormal.otf');
-                        if (fs.existsSync(backupFont)) {
-                            fs.copyFileSync(backupFont, fontPath);
-                        } else {
-                            throw new Error("File TeutonNormal.otf tidak ditemukan di GitHub maupun di root directory server.");
-                        }
-                    }
-                } catch (fontErr) {
-                    return res.status(500).json({
+                    // Beri timeout longgar hanya saat download pertama kali
+                    const imgResponse = await fetch(templatePrefixUrl, { timeout: 15000 });
+                    if (!imgResponse.ok) throw new Error(`Status HTTP ${imgResponse.status}`);
+                    const imgBuffer = Buffer.from(await imgResponse.arrayBuffer());
+                    
+                    // Simpan permanen ke folder lobby/ agar request berikutnya tinggal pake file lokal
+                    fs.writeFileSync(localTemplatePath, imgBuffer);
+                    console.log(`[DOWNLOADER] Template ${randomNum}.jpg berhasil disimpan di lokal server.`);
+                } catch (downloadErr) {
+                    return res.status(504).json({
                         status: false,
                         creator: "Rin imup",
-                        message: "Aplikasi gagal memuat Font TeutonNormal.otf.",
-                        error: fontErr.message
+                        message: `Koneksi server ke GitHub Timeout saat mengunduh template ke-${randomNum}. Silahkan coba lagi beberapa saat lagi.`,
+                        error: downloadErr.message
                     });
                 }
             }
 
-            // 3. Setup Kalkulasi Logika FFmpeg (Sesuai setelan bot-helper kamu)
+            // Proteksi Font: Jika font belum ada di tmp, unduh otomatis atau ambil dari root
+            if (!fs.existsSync(fontPath)) {
+                try {
+                    const fontResponse = await fetch('https://raw.githubusercontent.com/ryyntwx/pakeff2/refs/heads/main/TeutonNormal.otf', { timeout: 10000 });
+                    if (fontResponse.ok) {
+                        const fontBuffer = Buffer.from(await fontResponse.arrayBuffer());
+                        fs.writeFileSync(fontPath, fontBuffer);
+                    } else {
+                        const backupFont = path.join(process.cwd(), 'TeutonNormal.otf');
+                        if (fs.existsSync(backupFont)) {
+                            fs.copyFileSync(backupFont, fontPath);
+                        } else {
+                            throw new Error("File TeutonNormal.otf tidak ditemukan.");
+                        }
+                    }
+                } catch (fontErr) {
+                    // Fallback jika internet ke github mati, coba cari lokal root
+                    const backupFont = path.join(process.cwd(), 'TeutonNormal.otf');
+                    if (fs.existsSync(backupFont)) {
+                        fs.copyFileSync(backupFont, fontPath);
+                    } else {
+                        return res.status(500).json({
+                            status: false,
+                            creator: "Rin imup",
+                            message: "Gagal memuat font TeutonNormal.otf karena koneksi timeout.",
+                            error: fontErr.message
+                        });
+                    }
+                }
+            }
+
+            // Setup Kalkulasi Logika FFmpeg 
             const fontSize = cleanName.length < 8 ? "w*0.046" : cleanName.length <= 15 ? "w*0.047" : "w*0.036";
             const posX = "(w-text_w)/2+38";
             const posY = "h*0.788";
@@ -120,7 +135,7 @@ module.exports = {
                 "error",
                 "-y",
                 "-i",
-                inputLocalPath,
+                localTemplatePath, // Membaca langsung file lokal (SUPER CEPAT)
                 "-filter_complex",
                 filterComplex,
                 "-map",
@@ -134,52 +149,43 @@ module.exports = {
                 outputLocalPath,
             ];
 
-            // 4. Jalankan Eksekusi Render FFmpeg Image
-            execFile("ffmpeg", ffmpegArgs, { timeout: 15000 }, async (err, _stdout, stderr) => {
+            // Jalankan Eksekusi Render FFmpeg Image
+            execFile("ffmpeg", ffmpegArgs, { timeout: 30000 }, async (err, _stdout, stderr) => {
                 try {
                     if (err || !fs.existsSync(outputLocalPath)) {
                         const detail = String(stderr || err?.message || "unknown ffmpeg error").replace(/\s+/g, " ").trim();
                         console.error("[FFLOBBY API ERR]", detail);
                         
-                        // Cek spesifik jika penyebabnya adalah FFmpeg belum terinstal di system panel kamu
-                        const isNotInstalled = /ENOENT/i.test(detail) || /not found/i.test(detail);
-                        
                         return res.status(500).json({
                             status: false,
                             creator: "Rin imup",
-                            message: isNotInstalled 
-                                ? "Server Error: Perintah 'ffmpeg' tidak ditemukan di sistem hosting/panel VPS kamu. Harap instal ffmpeg terlebih dahulu!" 
-                                : "FFmpeg gagal merender gambar lobby custom.",
+                            message: "FFmpeg gagal merender gambar.",
                             error: detail
                         });
                     }
 
-                    // Baca hasil render jadi buffer gambar mentah
                     const finalBuffer = fs.readFileSync(outputLocalPath);
 
-                    // Atur header response agar langsung dibaca sebagai file gambar asli
                     res.setHeader('Content-Type', 'image/jpeg');
                     res.setHeader('X-Template-Used', String(randomNum));
+                    res.setHeader('X-Source', 'Local-Cache');
 
                     return res.send(finalBuffer);
 
                 } catch (innerErr) {
                     return res.status(500).json({ status: false, creator: "Rin imup", message: innerErr.message });
                 } finally {
-                    // Bersihkan berkas sampah temporer dari penyimpanan server
-                    if (fs.existsSync(inputLocalPath)) fs.unlinkSync(inputLocalPath);
+                    // Hapus HANYA file output hasil render temp agar disk tidak penuh
                     if (fs.existsSync(outputLocalPath)) fs.unlinkSync(outputLocalPath);
                 }
             });
 
         } catch (err) {
-            if (fs.existsSync(inputLocalPath)) fs.unlinkSync(inputLocalPath);
             if (fs.existsSync(outputLocalPath)) fs.unlinkSync(outputLocalPath);
-
             res.status(500).json({
                 status: false,
                 creator: "Rin imup",
-                message: err.message || 'Terjadi kesalahan internal saat memproses data Fake FF.'
+                message: err.message || 'Terjadi kesalahan internal.'
             });
         }
     },
@@ -195,4 +201,4 @@ module.exports = {
             }
         ],
     }
-};                
+};
