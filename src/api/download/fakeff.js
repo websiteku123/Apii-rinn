@@ -16,7 +16,7 @@ module.exports = {
                 });
             }
 
-            // Memproses generate lobby Free Fire
+            // Memproses generate lobby Free Fire menggunakan modul fake-ff
             const resultData = await generateFF({
                 username: String(inputName).trim()
             });
@@ -25,14 +25,14 @@ module.exports = {
                 throw new Error('Modul gagal menggenerate data Fake FF.');
             }
 
-            // PENTING: Struktur data harus pakai "media" agar gambar lobby muncul di UI dashboard kamu
+            // Struktur data JSON menggunakan properti "media" agar muncul di UI Dashboard Maker
             res.json({
                 status: true,
                 creator: "Rin imup",
                 data: {
                     type: 'image/png',
                     title: 'Fake Free Fire Lobby',
-                    media: [resultData], // Menaruh hasil output modul ke sini agar dirender sebagai gambar
+                    media: [resultData], // Output dari modul berupa link/buffer otomatis di-render di dashboard
                     description: `Berhasil menggenerate gambar fake lobby Free Fire dengan nama: ${inputName}`
                 }
             });
@@ -52,7 +52,7 @@ module.exports = {
                 name: 'name',
                 in: 'query',
                 required: true,
-                description: 'Nama atau Username FF yang ingin dicantumkan di dalam lobby'
+                description: 'Nama kamu'
             }
         ],
     }
