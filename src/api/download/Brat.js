@@ -1,4 +1,39 @@
 const fetch = require('node-fetch');
+const FormData = require('form-data');
+
+// Fungsi untuk upload buffer gambar Brat ke Catbox
+async function uploadToCatbox(buffer) {
+  const form = new FormData();
+  form.append('reqtype', 'fileupload');
+  form.append('fileToUpload', buffer, { filename: 'brat.png', contentType: 'image/png' });
+
+  const res = await fetch('https://catbox.moe/user/api.php', {
+    method: 'POST',
+    headers: form.getHeaders(),
+    body: form
+  });
+
+  if (!res.ok) throw new Error('Catbox Down/Gagal');
+  const text = await res.text();
+  if (!text.includes('https://')) throw new Error('Respon Catbox tidak valid');
+  return text.trim();
+}
+
+// Fungsi cadangan jika Catbox down (Upload ke File.io)
+async function uploadToFileIo(buffer) {
+  const form = new FormData();
+  form.append('file', buffer, { filename: 'brat.png', contentType: 'image/png' });
+
+  const res = await fetch('https://file.io/?expires=1d', {
+    method: 'POST',
+    headers: form.getHeaders(),
+    body: form
+  });
+
+  const json = await res.json();
+  if (!json.success) throw new Error('File.io juga gagal');
+  return json.link;
+}
 
 module.exports = {
     method: 'get',
@@ -16,8 +51,24 @@ module.exports = {
                 });
             }
 
-            // Memanfaatkan engine Hugging Face Space yang sudah kamu pakai di bot sebelumnya
-            const bratImageUrl = `https://aqul-brat.hf.space?text=${encodeURIComponent(inputText)}`;
+            // URL Sumber utama dari Hugging Face Space
+            const bratSourceUrl = `https://aqul-brat.hf.space?text=${encodeURIComponent(inputText)}`;
+
+            // 1. Download gambar dari resource aslinya menjadi buffer biner
+            const responseImg = await fetch(bratSourceUrl);
+            if (!responseImg.ok) {
+                throw new Error('Gagal mengambil gambar dari server hf.space');
+            }
+            const imageBuffer = await responseImg.buffer();
+
+            // 2. Upload otomatis ke Catbox dengan fallback ke File.io jika gagal
+            let finalMediaUrl;
+            try {
+                finalMediaUrl = await uploadToCatbox(imageBuffer);
+            } catch (err) {
+                console.error('Catbox sepertinya down, beralih ke File.io...', err.message);
+                finalMediaUrl = await uploadToFileIo(imageBuffer);
+            }
 
             // Struktur data JSON menggunakan properti "media" agar otomatis muncul di UI Dashboard Maker
             res.json({
@@ -27,7 +78,7 @@ module.exports = {
                     type: 'image/png',
                     title: 'Brat Text Generator',
                     text: inputText,
-                    media: [bratImageUrl],
+                    media: [finalMediaUrl], // Output link baru hasil re-upload
                     description: `Berhasil buat Brat: "${inputText}"`
                 }
             });
