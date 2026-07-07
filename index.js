@@ -33,15 +33,11 @@ try {
 
 const TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = config.TELEGRAM_CHAT_ID || "";
-
-// Mengambil apikey murni dari config.json agar aman dari pencurian
 const VALID_API_KEY = config.API_KEY; 
 
-// Storage limit API Key & Tanggal Tracker
 let apiKeyUsageStore = {}; 
 let currentTrackingDate = new Date().toDateString(); 
 
-// Fungsi auto-reset limit pas jam 00:00 WIB malam
 function checkAndResetLimitAtMidnight() {
     const today = new Date().toDateString();
     if (today !== currentTrackingDate) {
@@ -76,18 +72,14 @@ app.use((req, res, next) => {
     const requestUrl = req.originalUrl; 
     const reqPath = req.path;
 
-    // Filter file aset statis
     const isStaticFile = /\.(json|css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|otf|map)$/i.test(reqPath);
     const isMainPage = reqPath === '/' || reqPath === '/openapi.json';
-
-    // FIX ANTI-SPAM OTP: Jika URL mengandung kata otp, spam, atau bomber, maka jangan kirim log ke Telegram
     const isSpamEndpoint = /(otp|spam|bomb|bomber|bruteforce)/i.test(requestUrl);
 
     res.send = function(data) {
         const duration = Date.now() - start;
         const status = res.statusCode;
         
-        // Logika pengiriman log: Kirim HANYA jika bukan file statis, bukan halaman utama, DAN bukan endpoint spam/otp
         if (!isStaticFile && !isMainPage && !isSpamEndpoint) {
             const logMsg = `
 <b>📥 Request API</b>
@@ -109,18 +101,19 @@ app.use((req, res, next) => {
 });
 
 // ==========================================
-// 2. MIDDLEWARE INJECT CREATOR RESPONSE
+// 2. MIDDLEWARE INJECT CREATOR (PERBAIKAN UTAMA)
 // ==========================================
 const CREATOR = process.env.API_CREATOR || "Welcome to  Api Rinn";
 app.use((req, res, next) => {
     const originalJson = res.json;
-    res.json = function (data) {
-        const contentType = res.get('Content-Type');
-        if (contentType && contentType.startsWith('image/')) {
-            return originalJson.call(this, data);
-        }
+    const originalSend = res.send;
 
-        if (data && typeof data === 'object' && !Buffer.isBuffer(data)) {
+    // Fix res.json agar tidak mengutak-atik buffer
+    res.json = function (data) {
+        if (Buffer.isBuffer(data)) {
+            return originalSend.call(this, data);
+        }
+        if (data && typeof data === 'object') {
             const responseData = {
                 status: data.status,
                 creator: CREATOR,
@@ -130,6 +123,18 @@ app.use((req, res, next) => {
         }
         return originalJson.call(this, data);
     };
+
+    // FIX COUPLING DI RES.SEND: Jika data yang dikirim adalah Buffer gambar, langsung lolos tanpa dibedah objek!
+    res.send = function (data) {
+        const contentType = res.get('Content-Type');
+        
+        // Jika content-type berupa image atau data adalah instance dari Buffer, langsung bypass keluar!
+        if ((contentType && contentType.startsWith('image/')) || Buffer.isBuffer(data)) {
+            return originalSend.call(this, data);
+        }
+        return originalSend.call(this, data);
+    };
+
     next();
 });
 
@@ -282,8 +287,13 @@ app.use((err, req, res, next) => {
     res.status(500).sendFile(path.join(__dirname, 'api-page', '500.html'));
 });
 
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ status: false, message: "Internal Server Error" });
+});
+
 app.listen(PORT, () => {
     console.log(chalk.bgHex('#90EE90').hex('#333').bold(` Server is running on port ${PORT} `));
 });
 
-module.exports = app;
+module.exports = app;                    
