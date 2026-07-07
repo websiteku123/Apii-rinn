@@ -1,46 +1,10 @@
 const fetch = require('node-fetch');
 const FormData = require('form-data');
 
-// Fungsi untuk upload buffer gambar hasil edit ke Catbox
-async function uploadToCatbox(buffer) {
-  const form = new FormData();
-  form.append('reqtype', 'fileupload');
-  form.append('fileToUpload', buffer, { filename: 'edited_image.jpg', contentType: 'image/jpeg' });
-
-  const res = await fetch('https://catbox.moe/user/api.php', {
-    method: 'POST',
-    headers: form.getHeaders(),
-    body: form,
-    timeout: 0 // Bebas timeout untuk upload
-  });
-
-  if (!res.ok) throw new Error('Catbox Down/Gagal');
-  const text = await res.text();
-  if (!text.includes('https://')) throw new Error('Respon Catbox tidak valid');
-  return text.trim();
-}
-
-// Fungsi cadangan upload jika Catbox down (Upload ke File.io)
-async function uploadToFileIo(buffer) {
-  const form = new FormData();
-  form.append('file', buffer, { filename: 'edited_image.jpg', contentType: 'image/jpeg' });
-
-  const res = await fetch('https://file.io/?expires=1d', {
-    method: 'POST',
-    headers: form.getHeaders(),
-    body: form,
-    timeout: 0 // Bebas timeout untuk upload
-  });
-
-  const json = await res.json();
-  if (!json.success) throw new Error('File.io juga gagal');
-  return json.link;
-}
-
 // Fungsi utama memproses manipulasi gambar via Banana-Nano AI
 async function processEditImage(imageUrl, promptText) {
   // 1. Download gambar dari URL parameter menjadi buffer biner
-  const imageRes = await fetch(imageUrl, { timeout: 0 });
+  const imageRes = await fetch(imageUrl);
   if (!imageRes.ok) throw new Error('Gagal mengunduh gambar sumber dari URL yang diberikan');
   const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
 
@@ -51,7 +15,7 @@ async function processEditImage(imageUrl, promptText) {
   form.append('output_format', 'jpg');
   form.append('generator_slug', 'ai-image-editor');
 
-  // 3. Request post ke API backend Banana Nano (Bebas Timeout)
+  // 3. Request post ke API backend Banana Nano
   const response = await fetch('https://banana-nano.ai/api/nano-banana-lite-image-to-image', {
     method: 'POST',
     headers: {
@@ -61,8 +25,7 @@ async function processEditImage(imageUrl, promptText) {
       'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       ...form.getHeaders()
     },
-    body: form,
-    timeout: 0 // DISET 0 AGAR MAU MENUNGGU LAMA SAMPAI RENDERING AI SELESAI
+    body: form
   });
 
   if (!response.ok) {
@@ -73,19 +36,20 @@ async function processEditImage(imageUrl, promptText) {
   const targetResultUrl = jsonResult.r2_url || jsonResult.output_image_url || jsonResult.data?.image_url;
   
   if (!targetResultUrl) {
-    throw new Error(jsonResult.message || 'API Banana Nano tidak mengembalikan URL gambar hasil pemrosesan.');
+    throw new Error(jsonResult.message || 'API tidak mengembalikan URL gambar.');
   }
 
-  // 4. Download kembali gambar hasil render AI
-  const finalResultRes = await fetch(targetResultUrl, { timeout: 0 });
-  if (!finalResultRes.ok) throw new Error('Gagal mengunduh hasil gambar matang dari cdn resource');
-  
-  return Buffer.from(await finalResultRes.arrayBuffer());
+  return targetResultUrl;
 }
 
 module.exports = {
   method: 'get',
   path: '/tools/editimg',
+  // Trik Vercel: Jika kamu pakai Vercel Pro, ini akan otomatis menambah limit ke 60 detik.
+  // Jika pakai akun Hobby, ini akan tetap mentok di 10-15 detik tergantung regional AWS.
+  config: {
+    maxDuration: 60 
+  },
   handler: async (req, res) => {
     try {
       const imageUrl = req.query?.url || req.query?.image;
@@ -99,17 +63,9 @@ module.exports = {
         });
       }
 
-      // Menjalankan proses manipulasi gambar AI (Bisa memakan waktu lama)
-      const editedBuffer = await processEditImage(imageUrl, promptText);
-
-      // Mengunggah ke Catbox / File.io cadangan
-      let finalMediaUrl;
-      try {
-        finalMediaUrl = await uploadToCatbox(editedBuffer);
-      } catch (err) {
-        console.error('Catbox bermasalah, beralih unggah ke File.io...', err.message);
-        finalMediaUrl = await uploadToFileIo(editedBuffer);
-      }
+      // Menjalankan proses manipulasi gambar AI (Mengembalikan URL CDN Langsung)
+      // Ini memotong rantai download-upload ulang ke Catbox di sisi server agar menghemat durasi runtime Vercel!
+      const finalMediaUrl = await processEditImage(imageUrl, promptText);
 
       res.json({
         status: true,
@@ -119,32 +75,32 @@ module.exports = {
           title: 'AI Image Editor Result',
           prompt: promptText,
           media: [finalMediaUrl],
-          description: 'Gambar berhasil di edit.'
+          description: 'Gambar berhasil dimanipulasi. Menampilkan URL CDN cloud source langsung demi kestabilan runtime.'
         }
       });
     } catch (err) {
       res.status(500).json({
         status: false,
         creator: "Rin imup",
-        message: err.message || 'Terjadi kesalahan internal saat memproses manipulasi gambar'
+        message: err.message || 'Terjadi kesalahan internal / Serverless timeout saat memproses gambar.'
       });
     }
   },
   metadata: {
     category: 'Tools',
-    description: 'Mengedit, memodifikasi, atau mendesain ulang gambar menggunakan prompt.',
+    description: 'Mengedit gambar menggunakan instruksi teks (prompt) berbasis AI Image-to-Image.',
     parameters: [
       {
         name: 'url',
         in: 'query',
         required: true,
-        description: 'link URL image yang ingin diedit'
+        description: 'URL tautan gambar publik yang ingin diedit'
       },
       {
         name: 'prompt',
         in: 'query',
         required: true,
-        description: 'Perintah untuk edit gambar nya'
+        description: 'Perintah modifikasi teks gambar'
       }
     ],
   }
