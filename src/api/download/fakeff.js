@@ -15,7 +15,7 @@ module.exports = {
                 });
             }
 
-            // Memproses generate lobby Free Fire (Output berupa Buffer)
+            // Memproses generate lobby Free Fire
             const resultData = await generateFF({
                 username: String(inputName).trim()
             });
@@ -24,11 +24,24 @@ module.exports = {
                 throw new Error('Modul gagal menggenerate data Fake FF.');
             }
 
-            // FIX UTAMA: Atur header respons agar dikenali sebagai file gambar langsung
+            // FIX UTAMA: Mengubah output Base64 dari modul menjadi Buffer biner asli
+            let imageBuffer;
+            if (typeof resultData === 'string') {
+                // Jika modul mengembalikan string base64 yang mengandung header data:image
+                const base64Data = resultData.replace(/^data:image\/\w+;base64,/, "");
+                imageBuffer = Buffer.from(base64Data, 'base64');
+            } else if (Buffer.isBuffer(resultData)) {
+                // Jika ternyata sudah berupa buffer (untuk amannya tetap dijaga)
+                imageBuffer = resultData;
+            } else {
+                throw new Error('Format data yang dikembalikan modul tidak dikenali.');
+            }
+
+            // Atur header respons agar dikenali sebagai file gambar langsung oleh browser & middleware index.js
             res.setHeader('Content-Type', 'image/png');
 
-            // Kirim langsung buffer gambar mentah secara instan tanpa dibungkus JSON
-            return res.send(resultData);
+            // Kirim buffer gambar mentah yang valid
+            return res.send(imageBuffer);
 
         } catch (err) {
             res.status(500).json({
@@ -40,13 +53,13 @@ module.exports = {
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat gambar tiruan (fake) akun lobby Free Fire langsung dalam format gambar PNG.',
+        description: 'Membuat gambar fake loby ff dengan kualitas hd dan cocok buat jj.',
         parameters: [
             {
                 name: 'name',
                 in: 'query',
                 required: true,
-                description: 'Nama atau Username FF yang ingin dicantumkan di dalam lobby'
+                description: 'Nama lu pea isi'
             }
         ],
     }
