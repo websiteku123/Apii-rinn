@@ -34,27 +34,25 @@ try {
 const TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = config.TELEGRAM_CHAT_ID || "";
 
-// FIX KEAMANAN: Mengambil apikey murni dari config.json tanpa hardcode cadangan di file index
+// Mengambil apikey murni dari config.json agar aman dari pencurian
 const VALID_API_KEY = config.API_KEY; 
 
-// Storage untuk menyimpan database limit API Key (Akan reset otomatis pas ganti hari)
+// Storage limit API Key & Tanggal Tracker
 let apiKeyUsageStore = {}; 
-let currentTrackingDate = new Date().toDateString(); // Menyimpan tanggal hari ini (e.g. "Tue Jul 07 2026")
+let currentTrackingDate = new Date().toDateString(); 
 
-// Fungsi pengecekan & auto-reset jam 00:00 WIB
+// Fungsi auto-reset limit pas jam 00:00 WIB malam
 function checkAndResetLimitAtMidnight() {
     const today = new Date().toDateString();
-    // Jika tanggal sistem sudah berubah (artinya sudah lewat jam 00:00 malam)
     if (today !== currentTrackingDate) {
-        apiKeyUsageStore = {}; // Hapus / reset total semua limit kembali ke awal
-        currentTrackingDate = today; // Perbarui tanggal tracker hari ini
+        apiKeyUsageStore = {}; 
+        currentTrackingDate = today; 
         console.log(chalk.bgGreen.black(' 🔄 [SYSTEM] Sudah jam 00:00 WIB, semua limit apikey berhasil di-reset ke awal! '));
     }
 }
 
 async function sendTelegramLog(message) {
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-        console.log('Telegram token/chat ID not set');
         return;
     }
     try {
@@ -64,14 +62,13 @@ async function sendTelegramLog(message) {
             text: message,
             parse_mode: 'HTML'
         });
-        console.log('Telegram log sent');
     } catch (err) {
         console.error('Telegram log error:', err.response ? err.response.data : err.message);
     }
 }
 
 // ==========================================
-// 1. LOGGER DI PALING ATAS (ANTI-SPAM)
+// 1. LOGGER UTAMA (ANTI-SPAM OTP & STATIS)
 // ==========================================
 app.use((req, res, next) => {
     const start = Date.now();
@@ -79,14 +76,19 @@ app.use((req, res, next) => {
     const requestUrl = req.originalUrl; 
     const reqPath = req.path;
 
+    // Filter file aset statis
     const isStaticFile = /\.(json|css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|otf|map)$/i.test(reqPath);
     const isMainPage = reqPath === '/' || reqPath === '/openapi.json';
+
+    // FIX ANTI-SPAM OTP: Jika URL mengandung kata otp, spam, atau bomber, maka jangan kirim log ke Telegram
+    const isSpamEndpoint = /(otp|spam|bomb|bomber|bruteforce)/i.test(requestUrl);
 
     res.send = function(data) {
         const duration = Date.now() - start;
         const status = res.statusCode;
         
-        if (!isStaticFile && !isMainPage) {
+        // Logika pengiriman log: Kirim HANYA jika bukan file statis, bukan halaman utama, DAN bukan endpoint spam/otp
+        if (!isStaticFile && !isMainPage && !isSpamEndpoint) {
             const logMsg = `
 <b>📥 Request API</b>
 <b>Method:</b> ${req.method}
@@ -135,14 +137,13 @@ const routeMetadata = [];
 const apiFolder = path.join(__dirname, './src/api');
 
 // ==========================================
-// 3. MIDDLEWARE CEK API KEY & LIMIT 7x PER HARI (FIXED)
+// 3. MIDDLEWARE CHECK API KEY & LIMIT 7x PER HARI
 // ==========================================
 app.use((req, res, next) => {
     if (req.path.startsWith('/src/') || req.path === '/openapi.json' || req.path === '/' || req.path.startsWith('/api-page')) {
         return next();
     }
 
-    // Jalankan fungsi auto-reset jika waktu sudah melewati jam 00:00 malam
     checkAndResetLimitAtMidnight();
 
     const matchedRoute = routeMetadata.find(route => {
@@ -158,11 +159,10 @@ app.use((req, res, next) => {
     if (matchedRoute && matchedRoute.checkSecretKey) {
         const apiKey = req.headers['x-api-key'] || req.query.apikey || req.body?.apikey;
         
-        // 1. Validasi keberadaan dan kesamaan Api Key dari config.json
         if (!VALID_API_KEY) {
             return res.status(500).json({
                 status: false,
-                message: 'Internal Server Error: API Key belum dikonfigurasi di dalam config.json server.'
+                message: 'Internal Server Error: API Key belum dikonfigurasi di config.json server.'
             });
         }
 
@@ -173,12 +173,10 @@ app.use((req, res, next) => {
             });
         }
 
-        // 2. Logika Limit Request: Maksimal 7x per hari
         if (!apiKeyUsageStore[apiKey]) {
             apiKeyUsageStore[apiKey] = 0;
         }
 
-        // Cek jika kuota request harian sudah habis (sudah mencapai 7 kali hit)
         if (apiKeyUsageStore[apiKey] >= 7) {
             return res.status(429).json({
                 status: false,
@@ -186,7 +184,6 @@ app.use((req, res, next) => {
             });
         }
 
-        // Jika kuota masih ada, tambahkan hit count request-nya
         apiKeyUsageStore[apiKey] += 1;
         console.log(chalk.cyan(`[LIMIT TRACKER] Apikey "${apiKey}" digunakan. Hit ke: ${apiKeyUsageStore[apiKey]}/7 hari ini.`));
     }
