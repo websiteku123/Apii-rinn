@@ -80,13 +80,8 @@ module.exports = {
                 in: 'query',
                 required: false,
                 description: 'URL lengkap TikTok (vt.tiktok.com/... atau www.tiktok.com/@.../video/...)'
-            },
-            {
-                name: 'q',
-                in: 'query',
-                required: false,
-                description: 'Kata kunci untuk mencari video TikTok (jika tidak pakai url)'
             }
+            
         ],
     }
 };
