@@ -2,8 +2,24 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/:path*",
-      "destination": "http://pedia.panelcloud.web.id:4000/:path*"
+      "source": "/openapi.json",
+      "destination": "http://pedia.panelcloud.web.id:4000/openapi.json"
+    },
+    {
+      "source": "/maker/:path*",
+      "destination": "http://pedia.panelcloud.web.id:4000/maker/:path*"
+    },
+    {
+      "source": "/tools/:path*",
+      "destination": "http://pedia.panelcloud.web.id:4000/tools/:path*"
+    },
+    {
+      "source": "/download/:path*",
+      "destination": "http://pedia.panelcloud.web.id:4000/download/:path*"
+    },
+    {
+      "source": "/user/:path*",
+      "destination": "http://pedia.panelcloud.web.id:4000/user/:path*"
     }
   ]
 }
