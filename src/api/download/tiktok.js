@@ -76,7 +76,7 @@ module.exports = {
     },
     metadata: {
         category: 'Download',
-        description: 'Meningkatkan resolusi dan kualitas gambar (HD Image Enhancer via BeautyPlus)',
+        description: 'Dwonload vidi/foto dari tiktok',
         parameters: [
             {
                 name: 'url',
