@@ -1,4 +1,4 @@
-const fetch = require('node-fetch'); 
+ const fetch = require('node-fetch'); 
 const ttRegex = /(https:\/\/(vt|vm)\.tiktok\.com\/[^\s]+|https:\/\/www\.tiktok\.com\/@[\w.-]+\/video\/\d+)/;
 
 async function getTikTokData(input) {
@@ -39,6 +39,7 @@ module.exports = {
             if (!input) {
                 return res.status(400).json({
                     status: false,
+                    creator: "Rin imup",
                     message: 'Parameter diperlukan: ?url=... atau ?q=... (untuk pencarian)'
                 });
             }
@@ -47,6 +48,7 @@ module.exports = {
             const isPhoto = ttData.images && ttData.images.length > 0;
             const responseData = {
                 status: true,
+                creator: "Rin imup",
                 data: {
                     type: isPhoto ? 'photo' : 'video',
                     title: ttData.title || '-',
@@ -67,6 +69,7 @@ module.exports = {
         } catch (err) {
             res.status(500).json({
                 status: false,
+                creator: "Rin imup",
                 message: err.message || 'Terjadi kesalahan saat memproses permintaan'
             });
         }
@@ -81,7 +84,6 @@ module.exports = {
                 required: false,
                 description: 'URL lengkap TikTok (vt.tiktok.com/... atau www.tiktok.com/@.../video/...)'
             }
-            
         ],
     }
-};
+};       
