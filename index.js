@@ -1,4 +1,4 @@
-        const express = require('express');
+const express = require('express');
 const chalk = require('chalk');
 const fs = require('fs');
 const cors = require('cors');
@@ -15,8 +15,25 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cors());
 
-const TELEGRAM_BOT_TOKEN = "8610260349:AAGhBqK4TjhXicm5TJx6ydPpJW8021sO6es";
-const TELEGRAM_CHAT_ID = "7246739496";
+// ==========================================
+// LOAD CONFIGURATION FROM config.json
+// ==========================================
+let config = {};
+const configPath = path.join(__dirname, 'config.json');
+
+try {
+    if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } else {
+        console.warn(chalk.yellow('⚠️  Warning: config.json tidak ditemukan. Menggunakan fallback env / string kosong.'));
+    }
+} catch (error) {
+    console.error(chalk.red('❌ Gagal membaca atau parse config.json:', error.message));
+}
+
+const TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN || "";
+const TELEGRAM_CHAT_ID = config.TELEGRAM_CHAT_ID || "";
+const VALID_API_KEY = config.API_KEY || "Rinn"; 
 
 async function sendTelegramLog(message) {
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
@@ -106,11 +123,11 @@ app.use((req, res, next) => {
         return regex.test(req.path);
     });
 
-    // Pengecekan membaca status pengaman internal yang kita buat di fungsi pendaftaran
+    // Pengecekan membaca status pengaman internal dari config.json
     if (matchedRoute && matchedRoute.checkSecretKey) {
         const apiKey = req.headers['x-api-key'] || req.query.apikey || req.body?.apikey;
         
-        if (!apiKey || apiKey !== 'Rinn') {
+        if (!apiKey || apiKey !== VALID_API_KEY) {
             return res.status(401).json({
                 status: false,
                 message: 'Unauthorized: Invalid or missing API Key. Silahkan isi kolom input apikey dengan benar.'
