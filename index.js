@@ -68,7 +68,7 @@ app.use((req, res, next) => {
 // ==========================================
 // 2. MIDDLEWARE INJECT CREATOR RESPONSE
 // ==========================================
-const CREATOR = process.env.API_CREATOR || "Created By Rin api";
+const CREATOR = process.env.API_CREATOR || "Api By Rinn";
 app.use((req, res, next) => {
     const originalJson = res.json;
     res.json = function (data) {
