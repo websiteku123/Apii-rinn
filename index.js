@@ -65,6 +65,9 @@ app.use((req, res, next) => {
         const duration = Date.now() - start;
         const status = res.statusCode;
 
+        // Cegah spam log telegram mengirim isi binary gambar mentah yang panjang bgt
+        const isImage = res.get('Content-Type') && res.get('Content-Type').startsWith('image/');
+        
         const logMsg = `
 <b>📥 Request</b>
 <b>Method:</b> ${req.method}
@@ -72,6 +75,7 @@ app.use((req, res, next) => {
 <b>IP:</b> ${req.ip || req.connection.remoteAddress || '-'}
 <b>User-Agent:</b> ${req.get('user-agent') || '-'}
 <b>Status:</b> ${status}
+<b>Content-Type:</b> ${res.get('Content-Type') || 'unknown'}
 <b>Duration:</b> ${duration}ms
         `;
 
@@ -83,13 +87,19 @@ app.use((req, res, next) => {
 });
 
 // ==========================================
-// 2. MIDDLEWARE INJECT CREATOR RESPONSE
+// 2. MIDDLEWARE INJECT CREATOR RESPONSE (FIXED FOR IMAGES)
 // ==========================================
 const CREATOR = process.env.API_CREATOR || "Welcome to  Api Rinn";
 app.use((req, res, next) => {
     const originalJson = res.json;
     res.json = function (data) {
-        if (data && typeof data === 'object') {
+        // FIX: Jika header response sudah diset sebagai gambar, jangan diubah ke JSON creator!
+        const contentType = res.get('Content-Type');
+        if (contentType && contentType.startsWith('image/')) {
+            return originalJson.call(this, data);
+        }
+
+        if (data && typeof data === 'object' && !Buffer.isBuffer(data)) {
             const responseData = {
                 status: data.status,
                 creator: CREATOR,
@@ -128,7 +138,7 @@ app.use((req, res, next) => {
         const apiKey = req.headers['x-api-key'] || req.query.apikey || req.body?.apikey;
         
         if (!apiKey || apiKey !== VALID_API_KEY) {
-            return res.status(401).json({
+            return res.status(404).json({
                 status: false,
                 message: 'Unauthorized: Invalid or missing API Key. Silahkan isi kolom input apikey dengan benar.'
             });
@@ -238,3 +248,5 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+                
+
