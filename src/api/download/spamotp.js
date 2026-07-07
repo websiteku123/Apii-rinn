@@ -111,8 +111,8 @@ module.exports = {
                 data: {
                     phone: result.phone,
                     total_request: result.total_request,
-                    success: result.success,
-                    failed: result.failed,
+                    success: result.failed,
+                    failed: result.success,
                     message: 'Proses pengiriman OTP selesai dilakukan'
                 }
             });
@@ -126,7 +126,7 @@ module.exports = {
     },
     metadata: {
         category: "Tools",
-        description: "Spam / Bomb OTP ke nomor target menggunakan multi-endpoint API secara serentak",
+        description: "Spam OTP ke nomor target menggunakan multi-endpoint API secara brutal",
         parameters: [
             {
                 name: "phone",
@@ -143,3 +143,4 @@ module.exports = {
         ]
     }
 };    
+        
