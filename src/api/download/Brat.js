@@ -1,8 +1,7 @@
-      const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const { writeFileSync, existsSync, readFileSync } = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
-const FormData = require('form-data');
 
 const FONT_URL = 'https://raw.githubusercontent.com/Ditzzx-vibecoder/Assets/main/Font/ARIALN.ttf';
 const EMOJI_JSON_URL = 'https://media.githubusercontent.com/media/Ditzzx-vibecoder/entahlah/main/emoji-apple.json';
@@ -10,9 +9,9 @@ const FONT_PATH = path.join('/tmp', 'ARIALN.ttf');
 const EMOJI_JSON_PATH = path.join('/tmp', 'emoji-apple.json');
 
 const THEMES = {
-  black: { bg: '#000000', text: '#ffffff' },
-  white: { bg: '#ffffff', text: '#000000' },
-  green: { bg: '#8ace00', text: '#000000' }
+  hitam: { bg: '#000000', text: '#ffffff' },
+  putih: { bg: '#ffffff', text: '#000000' },
+  hijau: { bg: '#8ace00', text: '#000000' }
 };
 
 async function downloadFile(url, dest) {
@@ -58,14 +57,9 @@ async function getEmojiImage(emoji) {
     if (map[v]) { b64 = map[v]; break; }
   }
   if (!b64) return null;
-  try {
-    const img = await loadImage(Buffer.from(b64, 'base64'));
-    emojiImageCache.set(emoji, img);
-    return img;
-  } catch (e) {
-    console.warn(`Gagal load emoji ${emoji}:`, e.message);
-    return null;
-  }
+  const img = await loadImage(Buffer.from(b64, 'base64'));
+  emojiImageCache.set(emoji, img);
+  return img;
 }
 
 async function drawAppleEmoji(ctx, emoji, x, y, size) {
@@ -148,30 +142,6 @@ function findBestFontSize(ctx, text, maxWidth, maxHeight, lineGap) {
   return best;
 }
 
-async function uploadToCatbox(buffer) {
-  const form = new FormData();
-  form.append('reqtype', 'fileupload');
-  form.append('fileToUpload', buffer, { filename: 'brat.png', contentType: 'image/png' });
-
-  const res = await fetch('https://catbox.moe/user/api.php', {
-    method: 'POST',
-    headers: form.getHeaders(),
-    body: form
-  });
-  if (!res.ok) throw new Error('Catbox Gagal');
-  const text = await res.text();
-  return text.trim();
-}
-
-async function uploadToFileIo(buffer) {
-  const form = new FormData();
-  form.append('file', buffer, { filename: 'brat.png', contentType: 'image/png' });
-  const res = await fetch('https://file.io/?expires=1d', { method: 'POST', headers: form.getHeaders(), body: form });
-  const json = await res.json();
-  if (!json.success) throw new Error('File.io Gagal');
-  return json.link;
-}
-
 module.exports = {
   method: 'get',
   path: '/maker/brat',
@@ -189,6 +159,7 @@ module.exports = {
       }
 
       const selectedTheme = THEMES[themeInput] || THEMES.white;
+
       const size = 1000;
       const padding = 80;
       const lineGap = 20;
@@ -207,6 +178,9 @@ module.exports = {
       ctx.fillStyle = selectedTheme.bg;
       ctx.fillRect(0, 0, size, size);
 
+      // FIX BLUR: Menambahkan efek blur tipis (1px) agar tulisan estetik khas Brat blur
+      ctx.filter = 'blur(1px)';
+
       ctx.fillStyle = selectedTheme.text;
       ctx.font = `${fontSize}px ArialNarrow`;
       ctx.textAlign = 'left';
@@ -219,30 +193,14 @@ module.exports = {
         y += fontSize + lineGap;
       }
 
-      const buffer = canvas.toBuffer('image/png');
+      // Encode langsung ke buffer gambar PNG mentah
+      const buffer = await canvas.encode('png');
 
-      let finalMediaUrl;
-      try {
-        finalMediaUrl = await uploadToCatbox(buffer);
-      } catch (err) {
-        console.error('Catbox gagal, beralih ke File.io:', err.message);
-        finalMediaUrl = await uploadToFileIo(buffer);
-      }
+      // Set header respons agar dibaca browser sebagai gambar langsung
+      res.setHeader('Content-Type', 'image/png');
+      return res.send(buffer);
 
-      res.json({
-        status: true,
-        creator: "Rin imup",
-        data: {
-          type: 'image/png',
-          title: 'Brat Canvas Custom Generator',
-          text: inputText,
-          theme: themeInput,
-          media: [finalMediaUrl],
-          description: 'Berhasil membuat Brat Canvas kustom warna.'
-        }
-      });
     } catch (err) {
-      console.error('Error di /maker/brat:', err);
       res.status(500).json({
         status: false,
         creator: "Rin imup",
@@ -252,7 +210,7 @@ module.exports = {
   },
   metadata: {
     category: 'Maker',
-    description: 'Membuat stiker teks bergaya Brat dengan warna tema (white, black, green) kustom.',
+    description: 'Membuat stiker teks bergaya Brat langsung dalam format gambar PNG dengan efek tipis blur.',
     parameters: [
       {
         name: 'text',
@@ -264,9 +222,8 @@ module.exports = {
         name: 'theme',
         in: 'query',
         required: false,
-        description: 'Pilihan warna background: white, black, atau green'
+        description: 'Pilihan warna tema background: white, black, atau green'
       }
     ],
-    isApikey: false
   }
 };
