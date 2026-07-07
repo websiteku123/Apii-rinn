@@ -177,7 +177,7 @@ module.exports = {
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat gambar lobby custom Free Fire dengan teks gradasi metalik tajam otomatis acak dari 17 template HD.',
+        description: 'Membuat gambar lobby custom Free Fire cocok buat bahan untuk jj.',
         parameters: [
             {
                 name: 'name',
