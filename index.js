@@ -16,7 +16,7 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cors());
 
 // ==========================================
-// LOAD CONFIGURATION FROM config.json
+// LOAD CONFIGURATION FROM config.json (SECURE)
 // ==========================================
 let config = {};
 const configPath = path.join(__dirname, 'config.json');
@@ -25,7 +25,7 @@ try {
     if (fs.existsSync(configPath)) {
         config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     } else {
-        console.warn(chalk.yellow('⚠️  Warning: config.json tidak ditemukan. Menggunakan fallback env / string kosong.'));
+        console.warn(chalk.yellow('⚠️  Warning: config.json tidak ditemukan.'));
     }
 } catch (error) {
     console.error(chalk.red('❌ Gagal membaca atau parse config.json:', error.message));
@@ -33,7 +33,24 @@ try {
 
 const TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = config.TELEGRAM_CHAT_ID || "";
-const VALID_API_KEY = config.API_KEY || "Rinn"; 
+
+// FIX KEAMANAN: Mengambil apikey murni dari config.json tanpa hardcode cadangan di file index
+const VALID_API_KEY = config.API_KEY; 
+
+// Storage untuk menyimpan database limit API Key (Akan reset otomatis pas ganti hari)
+let apiKeyUsageStore = {}; 
+let currentTrackingDate = new Date().toDateString(); // Menyimpan tanggal hari ini (e.g. "Tue Jul 07 2026")
+
+// Fungsi pengecekan & auto-reset jam 00:00 WIB
+function checkAndResetLimitAtMidnight() {
+    const today = new Date().toDateString();
+    // Jika tanggal sistem sudah berubah (artinya sudah lewat jam 00:00 malam)
+    if (today !== currentTrackingDate) {
+        apiKeyUsageStore = {}; // Hapus / reset total semua limit kembali ke awal
+        currentTrackingDate = today; // Perbarui tanggal tracker hari ini
+        console.log(chalk.bgGreen.black(' 🔄 [SYSTEM] Sudah jam 00:00 WIB, semua limit apikey berhasil di-reset ke awal! '));
+    }
+}
 
 async function sendTelegramLog(message) {
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
@@ -54,7 +71,7 @@ async function sendTelegramLog(message) {
 }
 
 // ==========================================
-// 1. LOGGER DI PALING ATAS (PERBAIKAN FILTER AKURAT)
+// 1. LOGGER DI PALING ATAS (ANTI-SPAM)
 // ==========================================
 app.use((req, res, next) => {
     const start = Date.now();
@@ -62,17 +79,13 @@ app.use((req, res, next) => {
     const requestUrl = req.originalUrl; 
     const reqPath = req.path;
 
-    // 1. Cek apakah ini file static (Aset gambar/css/js) -> Jika YA, kita skip log
     const isStaticFile = /\.(json|css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|otf|map)$/i.test(reqPath);
-    
-    // 2. Cek apakah hanya membuka halaman utama "/" atau openapi -> Jika YA, kita skip log
     const isMainPage = reqPath === '/' || reqPath === '/openapi.json';
 
     res.send = function(data) {
         const duration = Date.now() - start;
         const status = res.statusCode;
         
-        // LOGIKA BARU: Kirim log HANYA jika BUKAN file static dan BUKAN halaman utama index web
         if (!isStaticFile && !isMainPage) {
             const logMsg = `
 <b>📥 Request API</b>
@@ -94,7 +107,7 @@ app.use((req, res, next) => {
 });
 
 // ==========================================
-// 2. MIDDLEWARE INJECT CREATOR RESPONSE (FIXED FOR IMAGES)
+// 2. MIDDLEWARE INJECT CREATOR RESPONSE
 // ==========================================
 const CREATOR = process.env.API_CREATOR || "Welcome to  Api Rinn";
 app.use((req, res, next) => {
@@ -122,12 +135,15 @@ const routeMetadata = [];
 const apiFolder = path.join(__dirname, './src/api');
 
 // ==========================================
-// 3. MIDDLEWARE CEK API KEY
+// 3. MIDDLEWARE CEK API KEY & LIMIT 7x PER HARI (FIXED)
 // ==========================================
 app.use((req, res, next) => {
     if (req.path.startsWith('/src/') || req.path === '/openapi.json' || req.path === '/' || req.path.startsWith('/api-page')) {
         return next();
     }
+
+    // Jalankan fungsi auto-reset jika waktu sudah melewati jam 00:00 malam
+    checkAndResetLimitAtMidnight();
 
     const matchedRoute = routeMetadata.find(route => {
         const methodMatch = route.method === 'ALL' || route.method.toLowerCase() === req.method.toLowerCase();
@@ -142,12 +158,37 @@ app.use((req, res, next) => {
     if (matchedRoute && matchedRoute.checkSecretKey) {
         const apiKey = req.headers['x-api-key'] || req.query.apikey || req.body?.apikey;
         
+        // 1. Validasi keberadaan dan kesamaan Api Key dari config.json
+        if (!VALID_API_KEY) {
+            return res.status(500).json({
+                status: false,
+                message: 'Internal Server Error: API Key belum dikonfigurasi di dalam config.json server.'
+            });
+        }
+
         if (!apiKey || apiKey !== VALID_API_KEY) {
             return res.status(401).json({
                 status: false,
                 message: 'Unauthorized: Invalid or missing API Key. Silahkan isi kolom input apikey dengan benar.'
             });
         }
+
+        // 2. Logika Limit Request: Maksimal 7x per hari
+        if (!apiKeyUsageStore[apiKey]) {
+            apiKeyUsageStore[apiKey] = 0;
+        }
+
+        // Cek jika kuota request harian sudah habis (sudah mencapai 7 kali hit)
+        if (apiKeyUsageStore[apiKey] >= 7) {
+            return res.status(429).json({
+                status: false,
+                message: `Limit Habis: Apikey ini telah mencapai batas maksimal 7 request per hari. Limit akan di-reset otomatis pada jam 00:00 WIB malam nanti.`
+            });
+        }
+
+        // Jika kuota masih ada, tambahkan hit count request-nya
+        apiKeyUsageStore[apiKey] += 1;
+        console.log(chalk.cyan(`[LIMIT TRACKER] Apikey "${apiKey}" digunakan. Hit ke: ${apiKeyUsageStore[apiKey]}/7 hari ini.`));
     }
     next();
 });
