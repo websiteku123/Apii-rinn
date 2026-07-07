@@ -1,4 +1,4 @@
-  const fetch = require('node-fetch');
+    const fetch = require('node-fetch');
 const FormData = require('form-data');
 
 // Fungsi untuk upload buffer gambar ke Catbox
@@ -35,42 +35,51 @@ async function uploadToFileIo(buffer) {
   return json.link;
 }
 
+// Engine Baru: Menggunakan prod-api remover yang anti-block Vercel
 async function removeBackground(imageUrl) {
-  // 1. Ambil buffer gambar dari URL parameter
-  const imageRes = await fetch(imageUrl);
-  if (!imageRes.ok) throw new Error('Gagal mengunduh gambar dari URL yang diberikan');
-  const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
+  const targetApi = `https://api.prodia.com/v1/tasks`; 
+  // Jika Prodia butuh key, kita gunakan alternatif universal free-scrape tanpa API key:
+  const backupApiUrl = `https://image.novita.ai/v3/remove-background`;
 
-  // 2. Susun form data dengan aman untuk Environment Node/Vercel
-  const rbgForm = new FormData();
-  rbgForm.append('image', imageBuffer, {
-    filename: 'image.jpg',
-    contentType: 'image/jpeg',
-  });
-  rbgForm.append('format', 'png');
-  rbgForm.append('model', 'v1');
-
-  // 3. Request ke backend Pixelcut Matte API
-  const rbgRes = await fetch('https://api2.pixelcut.app/image/matte/v1', {
-    method: 'POST',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
-      'Accept': 'application/json, text/plain, */*',
-      'x-locale': 'en',
-      'x-client-version': 'web:pixa.com:4a5b0af2',
-      'origin': 'https://www.pixa.com',
-      'referer': 'https://www.pixa.com/',
-      ...rbgForm.getHeaders() // Ini penting agar Boundary Header-nya pas dan tidak corrupt di Vercel
-    },
-    body: rbgForm
-  });
-
-  if (!rbgRes.ok) {
-    const errorText = await rbgRes.text().catch(() => '');
-    throw new Error(`Pixelcut API Error: ${rbgRes.status} - ${errorText || 'Gagal memproses gambar'}`);
+  // Mari gunakan endpoint free API remover via penghapus latar belakang berbasis sam/rembg publik
+  const res = await fetch(`https://tools.miku.it.id/api/removebg?url=${encodeURIComponent(imageUrl)}`).then(v => v.json()).catch(() => null);
+  
+  if (res && res.status && res.result) {
+    const imgRes = await fetch(res.result);
+    if (imgRes.ok) return Buffer.from(await imgRes.arrayBuffer());
   }
 
-  return Buffer.from(await rbgRes.arrayBuffer());
+  // Fallback Engine 2 jika engine utama gagal (Menggunakan skema langsung serverless matte)
+  const fallbackRes = await fetch('https://api.itsrose.rest/image/removebg', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: imageUrl })
+  }).then(v => v.json()).catch(() => null);
+
+  if (fallbackRes?.result?.url) {
+    const imgRes = await fetch(fallbackRes.result.url);
+    if (imgRes.ok) return Buffer.from(await imgRes.arrayBuffer());
+  }
+
+  // Fallback Engine 3: Menggunakan skema form-data tools alternatif
+  const form = new FormData();
+  form.append('image_url', imageUrl);
+  const rbgRes = await fetch('https://api.remove.bg/v1.0/removebg', { // jika punya token
+    method: 'POST',
+    headers: { 'X-Api-Key': 'MANUAL_KEY_JIKA_ADA' },
+    body: form
+  }).catch(() => null);
+  
+  if (rbgRes && rbgRes.ok) return Buffer.from(await rbgRes.arrayBuffer());
+
+  // Jika semua scraper free di atas block, gunakan API buatan prod-free ini wok:
+  const finalFallback = await fetch(`https://endpoint.miftahganzz.my.id/api/tools/removebg?url=${encodeURIComponent(imageUrl)}`).then(v => v.json()).catch(() => null);
+  if (finalFallback?.data?.url || finalFallback?.result) {
+    const imgRes = await fetch(finalFallback?.data?.url || finalFallback?.result);
+    if (imgRes.ok) return Buffer.from(await imgRes.arrayBuffer());
+  }
+
+  throw new Error('Semua antrean server background remover sedang sibuk/IP Vercel terblokir. Coba beberapa saat lagi.');
 }
 
 module.exports = {
@@ -88,19 +97,18 @@ module.exports = {
         });
       }
 
-      // Proses hapus background (dapatkan buffer PNG)
+      // Proses hapus background dengan engine anti-block
       const processedBuffer = await removeBackground(url);
 
-      // Logika upload: Coba Catbox dulu, kalau down pindah ke File.io
+      // Logika upload ke Catbox / File.io
       let finalImageUrl;
       try {
         finalImageUrl = await uploadToCatbox(processedBuffer);
       } catch (err) {
-        console.error('Catbox sepertinya down, beralih ke File.io...', err.message);
+        console.error('Catbox sepertinya down, beralih ke File.io...');
         finalImageUrl = await uploadToFileIo(processedBuffer);
       }
 
-      // Struktur respons rapi berupa URL link media mentah wok
       const responseData = {
         status: true,
         creator: "Rin imup",
@@ -108,7 +116,7 @@ module.exports = {
           type: 'image/png',
           title: 'Remove Background Result',
           media: [finalImageUrl],
-          description: 'Latar belakang gambar berhasil dihapus'
+          description: 'Latar belakang gambar berhasil diproses dengan bypass engine serverless.'
         }
       };
 
@@ -123,14 +131,14 @@ module.exports = {
   },
   metadata: {
     category: 'Tools',
-    description: 'Menghilangkan background gambar menjadi transparan.',
+    description: 'Menghilangkan background gambar menjadi transparan bypass block hosting Vercel.',
     parameters: [
       {
         name: 'url',
         in: 'query',
         required: true,
-        description: 'Masukan link url image'
+        description: 'URL langsung menuju gambar publik (jpg/jpeg/png)'
       }
     ],
   }
-};      
+};
