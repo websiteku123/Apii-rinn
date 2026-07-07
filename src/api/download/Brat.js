@@ -2,9 +2,8 @@ const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const { writeFileSync, existsSync, readFileSync } = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
-const FormData = require('form-data');
 
-// Konfigurasi Jalur Penyimpanan Sementara di Vercel (/tmp)
+// Konfigurasi Jalur Penyimpanan Sementara di Panel (/tmp atau lokal folder)
 const FONT_URL = 'https://raw.githubusercontent.com/Ditzzx-vibecoder/Assets/main/Font/ARIALN.ttf';
 const EMOJI_JSON_URL = 'https://media.githubusercontent.com/media/Ditzzx-vibecoder/entahlah/main/emoji-apple.json';
 const FONT_PATH = path.join('/tmp', 'ARIALN.ttf');
@@ -144,32 +143,6 @@ function findBestFontSize(ctx, text, maxWidth, maxHeight, lineGap) {
   return best;
 }
 
-// Uploader ke Catbox
-async function uploadToCatbox(buffer) {
-  const form = new FormData();
-  form.append('reqtype', 'fileupload');
-  form.append('fileToUpload', buffer, { filename: 'brat.png', contentType: 'image/png' });
-
-  const res = await fetch('https://catbox.moe/user/api.php', {
-    method: 'POST',
-    headers: form.getHeaders(),
-    body: form
-  });
-  if (!res.ok) throw new Error('Catbox Gagal');
-  const text = await res.text();
-  return text.trim();
-}
-
-// Uploader Cadangan ke File.io
-async function uploadToFileIo(buffer) {
-  const form = new FormData();
-  form.append('file', buffer, { filename: 'brat.png', contentType: 'image/png' });
-  const res = await fetch('https://file.io/?expires=1d', { method: 'POST', headers: form.getHeaders(), body: form });
-  const json = await res.json();
-  if (!json.success) throw new Error('File.io Gagal');
-  return json.link;
-}
-
 module.exports = {
   method: 'get',
   path: '/maker/brat',
@@ -194,7 +167,7 @@ module.exports = {
       const maxWidth = size - padding * 2;
       const maxHeight = size - padding * 2;
 
-      // Memastikan font dan emoji terunduh aman di direktori /tmp
+      // Memastikan font dan emoji terunduh aman
       await ensureFont();
       await loadEmojiMap();
 
@@ -219,31 +192,17 @@ module.exports = {
         y += fontSize + lineGap;
       }
 
-      // Encode canvas langsung menjadi buffer memory biner
+      // Encode canvas langsung menjadi buffer memory biner png
       const buffer = await canvas.encode('png');
 
-      // Unggah ke layanan hosting gambar eksternal
-      let finalMediaUrl;
-      try {
-        finalMediaUrl = await uploadToCatbox(buffer);
-      } catch (err) {
-        console.error('Catbox bermasalah, beralih ke File.io...', err.message);
-        finalMediaUrl = await uploadToFileIo(buffer);
-      }
+      // FIX: Atur header respons agar dikenali sebagai file gambar langsung
+      res.setHeader('Content-Type', 'image/png');
+      
+      // Kirim buffer gambar biner secara instan tanpa lewat uploader pihak ketiga
+      return res.send(buffer);
 
-      res.json({
-        status: true,
-        creator: "Rin imup",
-        data: {
-          type: 'image/png',
-          title: 'Brat Canvas Custom Generator',
-          text: inputText,
-          theme: themeInput,
-          media: [finalMediaUrl],
-          description: `Berhasil membuat Brat Canvas kustom warna.`
-        }
-      });
     } catch (err) {
+      // Jika terjadi eror di luar rendering, kirim JSON eror bawaan
       res.status(500).json({
         status: false,
         creator: "Rin imup",
@@ -253,7 +212,7 @@ module.exports = {
   },
   metadata: {
     category: 'Maker',
-    description: 'Membuat stiker teks bergaya Brat dengan warna tema (white, black, green) kustom.',
+    description: 'Membuat stiker teks bergaya Brat langsung dalam format gambar PNG.',
     parameters: [
       {
         name: 'text',
@@ -265,7 +224,7 @@ module.exports = {
         name: 'theme',
         in: 'query',
         required: false,
-        description: 'Pilihan warna tema background: white, black, atau green'
+        description: 'Pilihan warna tema background: white, black, atau green.'
       }
     ],
   }
