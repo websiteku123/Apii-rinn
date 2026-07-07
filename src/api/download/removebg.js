@@ -52,8 +52,8 @@ async function removeBackground(imageUrl) {
     throw new Error(`API Cuki Error: Status ${res.status}`);
   }
 
-  // Mengubah hasil response stream/binary menjadi buffer gambar PNG
-  const buffer = Buffer.from(await res.arrayBuffer());
+  // Menerima data biner stream gambar mentah secara aman tanpa corrupt
+  const buffer = await res.buffer();
   return buffer;
 }
 
@@ -75,6 +75,10 @@ module.exports = {
       // Ambil hasil pemrosesan gambar berbentuk buffer dari API Cuki
       const processedBuffer = await removeBackground(url);
 
+      if (!processedBuffer || processedBuffer.length === 0) {
+        throw new Error('Gagal memproses data gambar dari API sumber.');
+      }
+
       // Unggah otomatis ke Catbox (Fallback ke File.io jika down)
       let finalImageUrl;
       try {
@@ -92,7 +96,7 @@ module.exports = {
           type: 'image/png',
           title: 'Remove Background Result',
           media: [finalImageUrl],
-          description: 'Latar belakang gambar berhasil dihapus.'
+          description: 'Latar belakang gambar berhasil dihapus menggunakan Cuki API Engine.'
         }
       };
 
@@ -107,13 +111,13 @@ module.exports = {
   },
   metadata: {
     category: 'Tools',
-    description: 'Menghilangkan background gambar menjadi transparan.',
+    description: 'Menghilangkan background gambar menjadi transparan menggunakan integrasi API Cuki.',
     parameters: [
       {
         name: 'url',
         in: 'query',
         required: true,
-        description: 'Masukan link url image'
+        description: 'URL langsung menuju file gambar publik'
       }
     ],
   }
