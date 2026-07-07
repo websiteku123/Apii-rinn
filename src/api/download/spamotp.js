@@ -77,7 +77,7 @@ async function sendOtpBomb(phone) {
 }
 
 module.exports = {
-    method: 'all', 
+    method: 'Post', 
     path: '/tools/spamotp',
     isApikey: true, 
     handler: async (req, res) => {
