@@ -10,7 +10,8 @@ async function uploadToCatbox(buffer) {
   const res = await fetch('https://catbox.moe/user/api.php', {
     method: 'POST',
     headers: form.getHeaders(),
-    body: form
+    body: form,
+    timeout: 0 // Bebas timeout untuk upload
   });
 
   if (!res.ok) throw new Error('Catbox Down/Gagal');
@@ -27,7 +28,8 @@ async function uploadToFileIo(buffer) {
   const res = await fetch('https://file.io/?expires=1d', {
     method: 'POST',
     headers: form.getHeaders(),
-    body: form
+    body: form,
+    timeout: 0 // Bebas timeout untuk upload
   });
 
   const json = await res.json();
@@ -38,7 +40,7 @@ async function uploadToFileIo(buffer) {
 // Fungsi utama memproses manipulasi gambar via Banana-Nano AI
 async function processEditImage(imageUrl, promptText) {
   // 1. Download gambar dari URL parameter menjadi buffer biner
-  const imageRes = await fetch(imageUrl);
+  const imageRes = await fetch(imageUrl, { timeout: 0 });
   if (!imageRes.ok) throw new Error('Gagal mengunduh gambar sumber dari URL yang diberikan');
   const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
 
@@ -49,7 +51,7 @@ async function processEditImage(imageUrl, promptText) {
   form.append('output_format', 'jpg');
   form.append('generator_slug', 'ai-image-editor');
 
-  // 3. Request post ke API backend Banana Nano
+  // 3. Request post ke API backend Banana Nano (Bebas Timeout)
   const response = await fetch('https://banana-nano.ai/api/nano-banana-lite-image-to-image', {
     method: 'POST',
     headers: {
@@ -60,7 +62,7 @@ async function processEditImage(imageUrl, promptText) {
       ...form.getHeaders()
     },
     body: form,
-    timeout: 90000 // Berikan waktu timeout panjang untuk proses rendering AI
+    timeout: 0 // DISET 0 AGAR MAU MENUNGGU LAMA SAMPAI RENDERING AI SELESAI
   });
 
   if (!response.ok) {
@@ -74,8 +76,8 @@ async function processEditImage(imageUrl, promptText) {
     throw new Error(jsonResult.message || 'API Banana Nano tidak mengembalikan URL gambar hasil pemrosesan.');
   }
 
-  // 4. Download kembali gambar hasil render AI untuk diubah menjadi buffer agar bisa dihosting mandiri
-  const finalResultRes = await fetch(targetResultUrl);
+  // 4. Download kembali gambar hasil render AI
+  const finalResultRes = await fetch(targetResultUrl, { timeout: 0 });
   if (!finalResultRes.ok) throw new Error('Gagal mengunduh hasil gambar matang dari cdn resource');
   
   return Buffer.from(await finalResultRes.arrayBuffer());
@@ -89,7 +91,6 @@ module.exports = {
       const imageUrl = req.query?.url || req.query?.image;
       const promptText = req.query?.prompt || req.query?.q;
 
-      // Validasi ketersediaan parameter input
       if (!imageUrl || !promptText) {
         return res.status(400).json({
           status: false,
@@ -98,7 +99,7 @@ module.exports = {
         });
       }
 
-      // Menjalankan proses manipulasi gambar AI
+      // Menjalankan proses manipulasi gambar AI (Bisa memakan waktu lama)
       const editedBuffer = await processEditImage(imageUrl, promptText);
 
       // Mengunggah ke Catbox / File.io cadangan
@@ -110,7 +111,6 @@ module.exports = {
         finalMediaUrl = await uploadToFileIo(editedBuffer);
       }
 
-      // Output respons terstruktur untuk UI Dashboard kategori Tools
       res.json({
         status: true,
         creator: "Rin imup",
@@ -138,13 +138,13 @@ module.exports = {
         name: 'url',
         in: 'query',
         required: true,
-        description: 'link url gambar yang ingin diedit'
+        description: 'link URL image yang ingin diedit'
       },
       {
         name: 'prompt',
         in: 'query',
         required: true,
-        description: 'Perintah edit img nya'
+        description: 'Perintah untuk edit gambar nya'
       }
     ],
   }
