@@ -54,14 +54,18 @@ module.exports = {
             // URL Sumber utama dari Hugging Face Space
             const bratSourceUrl = `https://aqul-brat.hf.space?text=${encodeURIComponent(inputText)}`;
 
-            // 1. Download gambar dari resource aslinya menjadi buffer biner
+            // 1. Download gambar menggunakan arrayBuffer() agar aman dari crash biner di Vercel
             const responseImg = await fetch(bratSourceUrl);
             if (!responseImg.ok) {
                 throw new Error('Gagal mengambil gambar dari server hf.space');
             }
-            const imageBuffer = await responseImg.buffer();
+            const imageBuffer = Buffer.from(await responseImg.arrayBuffer());
 
-            // 2. Upload otomatis ke Catbox dengan fallback ke File.io jika gagal
+            if (!imageBuffer || imageBuffer.length === 0) {
+                throw new Error('Buffer gambar kosong / gagal diproses.');
+            }
+
+            // 2. Upload otomatis ke Catbox dengan fallback ke File.io
             let finalMediaUrl;
             try {
                 finalMediaUrl = await uploadToCatbox(imageBuffer);
@@ -78,7 +82,7 @@ module.exports = {
                     type: 'image/png',
                     title: 'Brat Text Generator',
                     text: inputText,
-                    media: [finalMediaUrl], // Output link baru hasil re-upload
+                    media: [finalMediaUrl], 
                     description: `Berhasil buat Brat: "${inputText}"`
                 }
             });
@@ -98,7 +102,7 @@ module.exports = {
                 name: 'text',
                 in: 'query',
                 required: true,
-                description: 'Teks yang ingin diubah menjadi sticker Brat'
+                description: 'Teks yang ingin diubah menjadi sticker Brat.'
             }
         ],
     }
