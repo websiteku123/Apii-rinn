@@ -1,4 +1,4 @@
-    const fetch = require('node-fetch');
+const fetch = require('node-fetch');
 const FormData = require('form-data');
 
 // Fungsi untuk upload buffer gambar ke Catbox
@@ -35,51 +35,26 @@ async function uploadToFileIo(buffer) {
   return json.link;
 }
 
-// Engine Baru: Menggunakan prod-api remover yang anti-block Vercel
+// Fungsi utama memproses removebg menggunakan API Cuki Biz
 async function removeBackground(imageUrl) {
-  const targetApi = `https://api.prodia.com/v1/tasks`; 
-  // Jika Prodia butuh key, kita gunakan alternatif universal free-scrape tanpa API key:
-  const backupApiUrl = `https://image.novita.ai/v3/remove-background`;
+  const apikey = 'cuki-x';
+  const apiUrl = `https://api.cuki.biz.id/api/editing/removebg?apikey=${apikey}&image=${encodeURIComponent(imageUrl)}`;
 
-  // Mari gunakan endpoint free API remover via penghapus latar belakang berbasis sam/rembg publik
-  const res = await fetch(`https://tools.miku.it.id/api/removebg?url=${encodeURIComponent(imageUrl)}`).then(v => v.json()).catch(() => null);
-  
-  if (res && res.status && res.result) {
-    const imgRes = await fetch(res.result);
-    if (imgRes.ok) return Buffer.from(await imgRes.arrayBuffer());
+  const res = await fetch(apiUrl, {
+    method: 'GET',
+    headers: {
+      'x-api-key': apikey,
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
+    }
+  });
+
+  if (!res.ok) {
+    throw new Error(`API Cuki Error: Status ${res.status}`);
   }
 
-  // Fallback Engine 2 jika engine utama gagal (Menggunakan skema langsung serverless matte)
-  const fallbackRes = await fetch('https://api.itsrose.rest/image/removebg', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: imageUrl })
-  }).then(v => v.json()).catch(() => null);
-
-  if (fallbackRes?.result?.url) {
-    const imgRes = await fetch(fallbackRes.result.url);
-    if (imgRes.ok) return Buffer.from(await imgRes.arrayBuffer());
-  }
-
-  // Fallback Engine 3: Menggunakan skema form-data tools alternatif
-  const form = new FormData();
-  form.append('image_url', imageUrl);
-  const rbgRes = await fetch('https://api.remove.bg/v1.0/removebg', { // jika punya token
-    method: 'POST',
-    headers: { 'X-Api-Key': 'MANUAL_KEY_JIKA_ADA' },
-    body: form
-  }).catch(() => null);
-  
-  if (rbgRes && rbgRes.ok) return Buffer.from(await rbgRes.arrayBuffer());
-
-  // Jika semua scraper free di atas block, gunakan API buatan prod-free ini wok:
-  const finalFallback = await fetch(`https://endpoint.miftahganzz.my.id/api/tools/removebg?url=${encodeURIComponent(imageUrl)}`).then(v => v.json()).catch(() => null);
-  if (finalFallback?.data?.url || finalFallback?.result) {
-    const imgRes = await fetch(finalFallback?.data?.url || finalFallback?.result);
-    if (imgRes.ok) return Buffer.from(await imgRes.arrayBuffer());
-  }
-
-  throw new Error('Semua antrean server background remover sedang sibuk/IP Vercel terblokir. Coba beberapa saat lagi.');
+  // Mengubah hasil response stream/binary menjadi buffer gambar PNG
+  const buffer = Buffer.from(await res.arrayBuffer());
+  return buffer;
 }
 
 module.exports = {
@@ -97,18 +72,19 @@ module.exports = {
         });
       }
 
-      // Proses hapus background dengan engine anti-block
+      // Ambil hasil pemrosesan gambar berbentuk buffer dari API Cuki
       const processedBuffer = await removeBackground(url);
 
-      // Logika upload ke Catbox / File.io
+      // Unggah otomatis ke Catbox (Fallback ke File.io jika down)
       let finalImageUrl;
       try {
         finalImageUrl = await uploadToCatbox(processedBuffer);
       } catch (err) {
-        console.error('Catbox sepertinya down, beralih ke File.io...');
+        console.error('Catbox sepertinya down, beralih ke File.io...', err.message);
         finalImageUrl = await uploadToFileIo(processedBuffer);
       }
 
+      // Output data JSON rapi berformat URL bersih
       const responseData = {
         status: true,
         creator: "Rin imup",
@@ -116,7 +92,7 @@ module.exports = {
           type: 'image/png',
           title: 'Remove Background Result',
           media: [finalImageUrl],
-          description: 'Latar belakang gambar berhasil diproses dengan bypass engine serverless.'
+          description: 'Latar belakang gambar berhasil dihapus.'
         }
       };
 
@@ -131,13 +107,13 @@ module.exports = {
   },
   metadata: {
     category: 'Tools',
-    description: 'Menghilangkan background gambar menjadi transparan bypass block hosting Vercel.',
+    description: 'Menghilangkan background gambar menjadi transparan.',
     parameters: [
       {
         name: 'url',
         in: 'query',
         required: true,
-        description: 'URL langsung menuju gambar publik (jpg/jpeg/png)'
+        description: 'Masukan link url image'
       }
     ],
   }
