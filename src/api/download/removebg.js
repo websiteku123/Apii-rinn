@@ -1,13 +1,47 @@
 const fetch = require('node-fetch');
 const FormData = require('form-data');
 
+// Fungsi untuk upload buffer gambar ke Catbox
+async function uploadToCatbox(buffer) {
+  const form = new FormData();
+  form.append('reqtype', 'fileupload');
+  form.append('fileToUpload', buffer, { filename: 'removebg.png', contentType: 'image/png' });
+
+  const res = await fetch('https://catbox.moe/user/api.php', {
+    method: 'POST',
+    headers: form.getHeaders(),
+    body: form
+  });
+
+  if (!res.ok) throw new Error('Catbox Down/Gagal');
+  const text = await res.text();
+  if (!text.includes('https://')) throw new Error('Respon Catbox tidak valid');
+  return text.trim();
+}
+
+// Fungsi cadangan jika Catbox down (Upload ke File.io)
+async function uploadToFileIo(buffer) {
+  const form = new FormData();
+  form.append('file', buffer, { filename: 'removebg.png', contentType: 'image/png' });
+
+  const res = await fetch('https://file.io/?expires=1d', {
+    method: 'POST',
+    headers: form.getHeaders(),
+    body: form
+  });
+
+  const json = await res.json();
+  if (!json.success) throw new Error('File.io juga gagal');
+  return json.link;
+}
+
 async function removeBackground(imageUrl) {
-  // 1. Ambil buffer gambar dari URL parameter yang dikirimkan user
+  // 1. Ambil buffer gambar dari URL parameter
   const imageRes = await fetch(imageUrl);
   if (!imageRes.ok) throw new Error('Gagal mengunduh gambar dari URL yang diberikan');
   const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
 
-  // 2. Susun form data untuk dikirim ke API Pixelcut
+  // 2. Susun form data untuk API Pixelcut
   const rbgForm = new FormData();
   rbgForm.append('image', imageBuffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
   rbgForm.append('format', 'png');
@@ -30,16 +64,13 @@ async function removeBackground(imageUrl) {
       'sec-fetch-dest': 'empty',
       'referer': 'https://www.pixa.com/',
       'accept-language': 'id-ID,id;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6',
-      ...rbgForm.getHeaders() // Sertakan boundary form data otomatis
+      ...rbgForm.getHeaders()
     },
     body: rbgForm
   });
 
-  if (!rbgRes.ok) throw new Error('Gagal memproses penghapusan background dari server produksi');
-
-  // 4. Ubah hasil response menjadi buffer data gambar
-  const resultBuffer = Buffer.from(await rbgRes.arrayBuffer());
-  return resultBuffer;
+  if (!rbgRes.ok) throw new Error('Gagal memproses penghapusan background dari server');
+  return Buffer.from(await rbgRes.arrayBuffer());
 }
 
 module.exports = {
@@ -57,20 +88,27 @@ module.exports = {
         });
       }
 
-      // Memproses gambar menggunakan fungsi removeBackground
-      const processedImageBuffer = await removeBackground(url);
+      // Proses hapus background (dapatkan buffer PNG)
+      const processedBuffer = await removeBackground(url);
 
-      // Skema keluaran respons JSON terstruktur
+      // Logika upload: Coba Catbox dulu, kalau down pindah ke File.io
+      let finalImageUrl;
+      try {
+        finalImageUrl = await uploadToCatbox(processedBuffer);
+      } catch (err) {
+        console.log('Catbox sepertinya down, beralih ke File.io...');
+        finalImageUrl = await uploadToFileIo(processedBuffer);
+      }
+
+      // Struktur respons rapi berupa URL link media mentah wok
       const responseData = {
         status: true,
         creator: "Rin imup",
         data: {
           type: 'image/png',
           title: 'Remove Background Result',
-          media: [
-            `data:image/png;base64,${processedImageBuffer.toString('base64')}`
-          ],
-          description: 'Latar belakang gambar berhasil dihapus menggunakan Pixelcut Engine.'
+          media: [finalImageUrl],
+          description: 'Latar belakang gambar berhasil dihapus dan diunggah ke hosting eksternal.'
         }
       };
 
@@ -85,13 +123,13 @@ module.exports = {
   },
   metadata: {
     category: 'Tools',
-    description: 'Menghilangkan background latar belakang gambar secara otomatis menjadi transparan.',
+    description: 'Menghilangkan background gambar menjadi transparan.',
     parameters: [
       {
         name: 'url',
         in: 'query',
         required: true,
-        description: 'masukan url image nya'
+        description: 'Masukan url image'
       }
     ],
   }
