@@ -3,10 +3,9 @@ const generateFF = require('fake-ff');
 module.exports = {
     method: 'get',
     path: '/maker/fakeff',
-    // Tanpa apikey sesuai struktur default jika tidak diminta
     handler: async (req, res) => {
         try {
-            // Mengambil input nama dari query parameter (mendukung ?name=... atau ?q=...)
+            // Mengambil input nama (?name=... atau ?q=...)
             const inputName = req.query?.name || req.query?.q;
 
             if (!inputName) {
@@ -17,25 +16,24 @@ module.exports = {
                 });
             }
 
-            // Memproses generate data lobby Free Fire menggunakan modul fake-ff
+            // Memproses generate lobby Free Fire
             const resultData = await generateFF({
                 username: String(inputName).trim()
             });
 
-            // Memastikan data berhasil digenerate oleh modul
             if (!resultData) {
                 throw new Error('Modul gagal menggenerate data Fake FF.');
             }
 
-            // Mengembalikan output response JSON rapi untuk UI Dashboard
+            // PENTING: Struktur data harus pakai "media" agar gambar lobby muncul di UI dashboard kamu
             res.json({
                 status: true,
                 creator: "Rin imup",
                 data: {
-                    title: 'Fake Free Fire Lobby Generator',
-                    username: inputName,
-                    result: resultData,
-                    message: 'Berhasil buat fake ff.'
+                    type: 'image/png',
+                    title: 'Fake Free Fire Lobby',
+                    media: [resultData], // Menaruh hasil output modul ke sini agar dirender sebagai gambar
+                    description: `Berhasil menggenerate gambar fake lobby Free Fire dengan nama: ${inputName}`
                 }
             });
         } catch (err) {
@@ -48,13 +46,13 @@ module.exports = {
     },
     metadata: {
         category: 'Maker',
-        description: 'Membuat maker fake ff dengan loby rendom cocok untuk bahan JJ.',
+        description: 'Membuat gambar tiruan (fake) akun lobby Free Fire berdasarkan nama yang dimasukkan.',
         parameters: [
             {
                 name: 'name',
                 in: 'query',
                 required: true,
-                description: 'Masukan nama.'
+                description: 'Nama atau Username FF yang ingin dicantumkan di dalam lobby'
             }
         ],
     }
