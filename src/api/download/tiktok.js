@@ -76,7 +76,7 @@ module.exports = {
     },
     metadata: {
         category: 'Download',
-        description: 'Dwonload video/foto dari TikTok dengan lebih cepat',
+        description: 'Dwonload video/foto dari TikTok',
         parameters: [
             {
                 name: 'url',
